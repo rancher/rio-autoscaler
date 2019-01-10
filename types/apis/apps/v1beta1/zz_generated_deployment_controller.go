@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 )
@@ -29,6 +30,13 @@ var (
 		Kind: DeploymentGroupVersionKind.Kind,
 	}
 )
+
+func NewDeployment(namespace, name string, obj v1beta1.Deployment) *v1beta1.Deployment {
+	obj.APIVersion, obj.Kind = DeploymentGroupVersionKind.ToAPIVersionAndKind()
+	obj.Name = name
+	obj.Namespace = namespace
+	return &obj
+}
 
 type DeploymentList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -225,8 +233,8 @@ func (s *deploymentClient) Watch(opts metav1.ListOptions) (watch.Interface, erro
 }
 
 // Patch applies the patch and returns the patched deployment.
-func (s *deploymentClient) Patch(o *v1beta1.Deployment, data []byte, subresources ...string) (*v1beta1.Deployment, error) {
-	obj, err := s.objectClient.Patch(o.Name, o, data, subresources...)
+func (s *deploymentClient) Patch(o *v1beta1.Deployment, patchType types.PatchType, data []byte, subresources ...string) (*v1beta1.Deployment, error) {
+	obj, err := s.objectClient.Patch(o.Name, o, patchType, data, subresources...)
 	return obj.(*v1beta1.Deployment), err
 }
 

@@ -24,6 +24,8 @@ type Interface interface {
 }
 
 type Clients struct {
+	Interface Interface
+
 	Deployment DeploymentClient
 }
 
@@ -66,6 +68,7 @@ func NewClients(config rest.Config) (*Clients, error) {
 
 func NewClientsFromInterface(iface Interface) *Clients {
 	return &Clients{
+		Interface: iface,
 
 		Deployment: &deploymentClient2{
 			iface: iface.Deployments(""),

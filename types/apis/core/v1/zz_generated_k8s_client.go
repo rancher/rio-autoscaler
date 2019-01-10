@@ -23,12 +23,16 @@ type Interface interface {
 	ServicesGetter
 	PodsGetter
 	EndpointsGetter
+	ConfigMapsGetter
 }
 
 type Clients struct {
+	Interface Interface
+
 	Service   ServiceClient
 	Pod       PodClient
 	Endpoints EndpointsClient
+	ConfigMap ConfigMapClient
 }
 
 type Client struct {
@@ -39,6 +43,7 @@ type Client struct {
 	serviceControllers   map[string]ServiceController
 	podControllers       map[string]PodController
 	endpointsControllers map[string]EndpointsController
+	configMapControllers map[string]ConfigMapController
 }
 
 func Factory(ctx context.Context, config rest.Config) (context.Context, controller.Starter, error) {
@@ -72,6 +77,7 @@ func NewClients(config rest.Config) (*Clients, error) {
 
 func NewClientsFromInterface(iface Interface) *Clients {
 	return &Clients{
+		Interface: iface,
 
 		Service: &serviceClient2{
 			iface: iface.Services(""),
@@ -81,6 +87,9 @@ func NewClientsFromInterface(iface Interface) *Clients {
 		},
 		Endpoints: &endpointsClient2{
 			iface: iface.Endpoints(""),
+		},
+		ConfigMap: &configMapClient2{
+			iface: iface.ConfigMaps(""),
 		},
 	}
 }
@@ -101,6 +110,7 @@ func NewForConfig(config rest.Config) (Interface, error) {
 		serviceControllers:   map[string]ServiceController{},
 		podControllers:       map[string]PodController{},
 		endpointsControllers: map[string]EndpointsController{},
+		configMapControllers: map[string]ConfigMapController{},
 	}, nil
 }
 
@@ -149,6 +159,19 @@ type EndpointsGetter interface {
 func (c *Client) Endpoints(namespace string) EndpointsInterface {
 	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &EndpointsResource, EndpointsGroupVersionKind, endpointsFactory{})
 	return &endpointsClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type ConfigMapsGetter interface {
+	ConfigMaps(namespace string) ConfigMapInterface
+}
+
+func (c *Client) ConfigMaps(namespace string) ConfigMapInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ConfigMapResource, ConfigMapGroupVersionKind, configMapFactory{})
+	return &configMapClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,

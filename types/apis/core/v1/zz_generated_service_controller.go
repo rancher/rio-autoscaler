@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 )
@@ -29,6 +30,13 @@ var (
 		Kind: ServiceGroupVersionKind.Kind,
 	}
 )
+
+func NewService(namespace, name string, obj v1.Service) *v1.Service {
+	obj.APIVersion, obj.Kind = ServiceGroupVersionKind.ToAPIVersionAndKind()
+	obj.Name = name
+	obj.Namespace = namespace
+	return &obj
+}
 
 type ServiceList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -225,8 +233,8 @@ func (s *serviceClient) Watch(opts metav1.ListOptions) (watch.Interface, error) 
 }
 
 // Patch applies the patch and returns the patched deployment.
-func (s *serviceClient) Patch(o *v1.Service, data []byte, subresources ...string) (*v1.Service, error) {
-	obj, err := s.objectClient.Patch(o.Name, o, data, subresources...)
+func (s *serviceClient) Patch(o *v1.Service, patchType types.PatchType, data []byte, subresources ...string) (*v1.Service, error) {
+	obj, err := s.objectClient.Patch(o.Name, o, patchType, data, subresources...)
 	return obj.(*v1.Service), err
 }
 
