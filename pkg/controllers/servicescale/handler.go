@@ -9,27 +9,29 @@ import (
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/autoscaler"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/autoscaling"
-	"github.com/rancher/rio-autoscaler/types/apis/apps/v1beta1"
 	corev1client "github.com/rancher/rio-autoscaler/types/apis/core/v1"
-	"github.com/rancher/rio-autoscaler/types/apis/rio-autoscale.cattle.io/v1"
+	"github.com/rancher/rio/types/apis/rio-autoscale.cattle.io/v1"
+	riov1 "github.com/rancher/rio/types/apis/rio.cattle.io/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
+
+var SyncMap sync.Map
 
 type ssrHandler struct {
 	ctx               context.Context
 	metrics           autoscaling.KPAMetrics
 	pollers           map[string]*poller
 	pollerLock        sync.Mutex
-	deploymentsLister v1beta1.DeploymentClientCache
-	deployments       v1beta1.DeploymentClient
+	rioServices       riov1.ServiceClient
+	rioServicesLister riov1.ServiceClientCache
 	services          corev1client.ServiceClientCache
 	pods              corev1client.PodClientCache
 }
 
 func NewHandler(ctx context.Context, metrics autoscaling.KPAMetrics,
-	depClient v1beta1.DeploymentClient,
+	rioServiceClient riov1.ServiceClient,
 	serviceClientCache corev1client.ServiceClientCache,
 	podClientCache corev1client.PodClientCache) *ssrHandler {
 
@@ -37,8 +39,8 @@ func NewHandler(ctx context.Context, metrics autoscaling.KPAMetrics,
 		ctx:               ctx,
 		metrics:           metrics,
 		pollers:           map[string]*poller{},
-		deploymentsLister: depClient.Cache(),
-		deployments:       depClient,
+		rioServices:       rioServiceClient,
+		rioServicesLister: rioServiceClient.Cache(),
 		services:          serviceClientCache,
 		pods:              podClientCache,
 	}
@@ -53,17 +55,17 @@ func (s *ssrHandler) OnChange(ssr *v1.ServiceScaleRecommendation) (runtime.Objec
 	s.monitor(ssr)
 
 	ssr.Status.DesiredScale = bounded(m.DesiredScale, ssr.Spec.MinScale, ssr.Spec.MaxScale)
-	return ssr, SetDeploymentScale(s.deployments, ssr, false)
+	return ssr, SetDeploymentScale(s.rioServices, s.rioServicesLister, ssr)
 }
 
-func bounded(value, lower, upper int32) int32 {
+func bounded(value, lower, upper int32) *int32 {
 	if value < lower {
-		return lower
+		return &lower
 	}
 	if upper > 0 && value > upper {
-		return upper
+		return &upper
 	}
-	return value
+	return &value
 }
 
 func (s *ssrHandler) OnRemove(ssr *v1.ServiceScaleRecommendation) (runtime.Object, error) {
@@ -96,39 +98,30 @@ func (s *ssrHandler) createMetric(ssr *v1.ServiceScaleRecommendation) (*autoscal
 	return metric, nil
 }
 
-func SetDeploymentScale(deployments v1beta1.DeploymentClient, ssr *v1.ServiceScaleRecommendation, setZero bool) error {
-	if ssr.Spec.DeploymentName != "" {
-		return nil
-	}
-
-	dep, err := deployments.Cache().Get(ssr.Namespace, ssr.Spec.DeploymentName)
+func SetDeploymentScale(rioServiceClient riov1.ServiceClient, rioServiceClientCache riov1.ServiceClientCache, ssr *v1.ServiceScaleRecommendation) error {
+	svc, err := rioServiceClientCache.Get(ssr.Namespace, ssr.Name)
 	if err != nil {
 		return err
 	}
 
-	current := int32(0)
-	if dep.Spec.Replicas != nil {
-		current = *dep.Spec.Replicas
-	}
+	current := svc.Spec.Scale
 
-	if current != ssr.Status.DesiredScale {
-		// Never scale to zero, the endpoints controller will do that
-		if !setZero && current == 1 && ssr.Status.DesiredScale == 0 {
-			return nil
+	if current != int(*ssr.Status.DesiredScale) {
+		if current == 1 && *ssr.Status.DesiredScale == 0 {
+			synced, ok := SyncMap.Load(key(ssr))
+			if ok && synced.(bool) {
+				return nil
+			}
 		}
 
-		dep = dep.DeepCopy()
-		if ssr.Status.DesiredScale == 0 {
-			scale := int32(1)
-			dep.Spec.Replicas = &scale
-		} else {
-			dep.Spec.Replicas = &ssr.Status.DesiredScale
-		}
+		svc = svc.DeepCopy()
 
-		dep.Spec.Replicas = &ssr.Status.DesiredScale
-		_, err := deployments.Update(dep)
-		return err
+		svc.Spec.Scale = int(*ssr.Status.DesiredScale)
+		if _, err := rioServiceClient.Update(svc); err != nil {
+			return err
+		}
 	}
+	SyncMap.Store(key(ssr), true)
 
 	return nil
 }
@@ -159,7 +152,7 @@ func toKPA(ssr *v1.ServiceScaleRecommendation) *kpa.PodAutoscaler {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ssr.Namespace,
-			Name:      ssr.Namespace,
+			Name:      ssr.Name,
 		},
 		Spec: kpa.PodAutoscalerSpec{
 			ContainerConcurrency: v1alpha1.RevisionContainerConcurrencyType(ssr.Spec.Concurrency),

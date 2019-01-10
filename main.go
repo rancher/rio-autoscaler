@@ -5,14 +5,19 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 
 	"github.com/rancher/norman"
-	"github.com/rancher/norman/pkg/resolvehome"
 	"github.com/rancher/norman/signal"
+	"github.com/rancher/rio-autoscaler/pkg/gatewayserver"
+	"github.com/rancher/rio-autoscaler/pkg/logger"
 	"github.com/rancher/rio-autoscaler/pkg/server"
+	"github.com/rancher/rio-autoscaler/types"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 var (
@@ -28,33 +33,60 @@ func main() {
 		cli.StringFlag{
 			Name:   "kubeconfig",
 			EnvVar: "KUBECONFIG",
-			Value:  "${HOME}/.kube/config",
+		},
+		cli.BoolFlag{
+			Name: "debug",
 		},
 	}
-	app.Action = run
+	app.Commands = []cli.Command{
+		{
+			Name:   "gateway",
+			Action: runGateway,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "listen",
+					Value: "8080",
+				},
+			},
+			Usage: "Run autoscaler gateway",
+		},
+	}
 
 	if err := app.Run(os.Args); err != nil {
 		logrus.Fatal(err)
 	}
 }
 
-func run(c *cli.Context) error {
+func runGateway(c *cli.Context) error {
 	logrus.Info("Starting controller")
 	ctx := signal.SigTermCancelContext(context.Background())
 
-	kubeConfig, err := resolvehome.Resolve(c.String("kubeconfig"))
-	if err != nil {
+	if err := logger.InitLogger(c.GlobalBool("debug")); err != nil {
 		return err
 	}
 
-	ctx, _, err = server.Config().Build(ctx, &norman.Options{
-		K8sMode:    "external",
-		KubeConfig: kubeConfig,
+	ctx, _, err := server.Config("rio-gateway").Build(ctx, &norman.Options{
+		K8sMode: "external",
 	})
-
 	if err != nil {
 		return err
 	}
+
+	rContext := types.From(ctx)
+	gatewayHandler := gatewayserver.NewHandler(rContext)
+
+	srv := &http.Server{
+		Addr:    ":" + c.String("listen"),
+		Handler: h2c.NewHandler(gatewayHandler, &http2.Server{}),
+	}
+
+	go func() {
+		logrus.Infof("starting gateway server on %s", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil {
+			logrus.Errorf("Error running HTTP server: %v", err)
+		}
+	}()
+
 	<-ctx.Done()
-	return nil
+	return srv.Shutdown(ctx)
 }

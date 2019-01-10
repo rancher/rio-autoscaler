@@ -1,7 +1,7 @@
 rio-autoscaler
 ========
 
-## ***FILL THIS OUT WITH A USEFUL DESCRIPTION OF THIS REPO***
+Auto-scaler component used by rio to scale services based on QPS and request load
 
 ## Building
 
