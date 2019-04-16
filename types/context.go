@@ -3,19 +3,29 @@ package types
 import (
 	"context"
 
-	corev1 "github.com/rancher/rio-autoscaler/types/apis/core/v1"
-	"github.com/rancher/rio/types/apis/networking.istio.io/v1alpha3"
-	autoscalev1 "github.com/rancher/rio/types/apis/rio-autoscale.cattle.io/v1"
-	riov1 "github.com/rancher/rio/types/apis/rio.cattle.io/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
+	autoscale "github.com/rancher/rio/pkg/generated/controllers/autoscale.rio.cattle.io"
+	"github.com/rancher/rio/pkg/generated/controllers/core"
+	networking "github.com/rancher/rio/pkg/generated/controllers/networking.istio.io"
+	rio "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io"
+	"github.com/rancher/wrangler/pkg/apply"
+	"github.com/rancher/wrangler/pkg/start"
 )
 
 type contextKey struct{}
 
 type Context struct {
-	Core       *corev1.Clients
-	Autoscaler *autoscalev1.Clients
-	Rio        *riov1.Clients
-	Networking *v1alpha3.Clients
+	Namespace string
+
+	Core       *core.Factory
+	AutoScale  *autoscale.Factory
+	Rio        *rio.Factory
+	K8s        kubernetes.Interface
+	Networking *networking.Factory
+
+	Apply apply.Apply
 }
 
 func Store(ctx context.Context, c *Context) context.Context {
@@ -26,17 +36,31 @@ func From(ctx context.Context) *Context {
 	return ctx.Value(contextKey{}).(*Context)
 }
 
-func NewContext(ctx context.Context) *Context {
-	return &Context{
-		Autoscaler: autoscalev1.ClientsFrom(ctx),
-		Core:       corev1.ClientsFrom(ctx),
-		Rio:        riov1.ClientsFrom(ctx),
-		Networking: v1alpha3.ClientsFrom(ctx),
+func NewContext(namespace string, config *rest.Config) *Context {
+	context := &Context{
+		Namespace:  namespace,
+		AutoScale:  autoscale.NewFactoryFromConfigOrDie(config),
+		Core:       core.NewFactoryFromConfigOrDie(config),
+		Rio:        rio.NewFactoryFromConfigOrDie(config),
+		Networking: networking.NewFactoryFromConfigOrDie(config),
 	}
+
+	context.Apply = apply.New(context.K8s.Discovery(), apply.NewClientFactory(config))
+	return context
 }
 
-func BuildContext(ctx context.Context) (context.Context, error) {
-	return Store(ctx, NewContext(ctx)), nil
+func (c *Context) Start(ctx context.Context) error {
+	return start.All(ctx, 5,
+		c.AutoScale,
+		c.Core,
+		c.Networking,
+		c.Rio,
+	)
+}
+
+func BuildContext(ctx context.Context, namespace string, config *rest.Config) (context.Context, *Context) {
+	c := NewContext(namespace, config)
+	return context.WithValue(ctx, contextKey{}, c), c
 }
 
 func Register(f func(context.Context, *Context) error) func(ctx context.Context) error {

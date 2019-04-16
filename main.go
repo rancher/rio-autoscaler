@@ -5,19 +5,21 @@ package main
 
 import (
 	"context"
+	"github.com/rancher/rio-autoscaler/pkg/controllers"
+	"k8s.io/apimachinery/pkg/util/runtime"
 	"net/http"
 	"os"
 
-	"github.com/rancher/norman"
-	"github.com/rancher/norman/signal"
 	"github.com/rancher/rio-autoscaler/pkg/gatewayserver"
 	"github.com/rancher/rio-autoscaler/pkg/logger"
-	"github.com/rancher/rio-autoscaler/pkg/server"
 	"github.com/rancher/rio-autoscaler/types"
+	"github.com/rancher/wrangler/pkg/signals"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+	"k8s.io/client-go/tools/clientcmd"
+	"github.com/rancher/wrangler/pkg/leader"
 )
 
 var (
@@ -59,22 +61,28 @@ func main() {
 
 func runGateway(c *cli.Context) error {
 	logrus.Info("Starting controller")
-	ctx := signal.SigTermCancelContext(context.Background())
+	ctx := signals.SetupSignalHandler(context.Background())
 
 	if err := logger.InitLogger(c.GlobalBool("debug")); err != nil {
 		return err
 	}
 
-	ctx, _, err := server.Config("rio-gateway").Build(ctx, &norman.Options{
-		K8sMode: "external",
-	})
+	kubeconfig := c.String("kubeconfig")
+	namespace := os.Getenv("NAMESPACE")
+
+	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return err
 	}
 
-	rContext := types.From(ctx)
-	gatewayHandler := gatewayserver.NewHandler(rContext)
+	ctx, rioContext := types.BuildContext(ctx, namespace, restConfig)
+	leader.RunOrDie(ctx, namespace, "rio", rioContext.K8s, func(ctx context.Context) {
+		runtime.Must(controllers.Register(ctx, rioContext))
+		runtime.Must(rioContext.Start(ctx))
+		<-ctx.Done()
+	})
 
+	gatewayHandler := gatewayserver.NewHandler(rioContext)
 	srv := &http.Server{
 		Addr:    ":" + c.String("listen"),
 		Handler: h2c.NewHandler(gatewayHandler, &http2.Server{}),

@@ -3,19 +3,20 @@ package servicescale
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
-
 	"github.com/knative/serving/pkg/autoscaler"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
 	"github.com/rancher/rancher/pkg/ticker"
 	"github.com/rancher/rio-autoscaler/pkg/metrics"
-	corev1client "github.com/rancher/rio-autoscaler/types/apis/core/v1"
-	"github.com/rancher/rio/types/apis/rio-autoscale.cattle.io/v1"
+	autoscalev1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
+	corev1controller "github.com/rancher/rio/pkg/generated/controllers/core/v1"
+	"github.com/rancher/rio/pkg/name"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -28,17 +29,17 @@ type poller struct {
 
 	ctx      context.Context
 	cancel   func()
-	ssr      *v1.ServiceScaleRecommendation
+	ssr      *autoscalev1.ServiceScaleRecommendation
 	recorder recorder
-	services corev1client.ServiceClientCache
-	pods     corev1client.PodClientCache
+	services corev1controller.ServiceCache
+	pods     corev1controller.PodCache
 
 	promAPI promv1.API
 	promURL string
 }
 
-func newPoller(ctx context.Context, ssr *v1.ServiceScaleRecommendation,
-	services corev1client.ServiceClientCache, pods corev1client.PodClientCache, recorder recorder) *poller {
+func newPoller(ctx context.Context, ssr *autoscalev1.ServiceScaleRecommendation,
+	services corev1controller.ServiceCache, pods corev1controller.PodCache, recorder recorder) *poller {
 	p := &poller{
 		ssr:      ssr,
 		recorder: recorder,
@@ -50,7 +51,7 @@ func newPoller(ctx context.Context, ssr *v1.ServiceScaleRecommendation,
 	return p
 }
 
-func (p *poller) update(ssr *v1.ServiceScaleRecommendation) {
+func (p *poller) update(ssr *autoscalev1.ServiceScaleRecommendation) {
 	if ssr == nil {
 		return
 	}
@@ -76,7 +77,7 @@ func (p *poller) start() {
 	}
 }
 
-func (p *poller) loadClient(ssr *v1.ServiceScaleRecommendation) error {
+func (p *poller) loadClient(ssr *autoscalev1.ServiceScaleRecommendation) error {
 	if p.promURL == ssr.Spec.PrometheusURL {
 		return nil
 	}
@@ -94,19 +95,23 @@ func (p *poller) loadClient(ssr *v1.ServiceScaleRecommendation) error {
 	return nil
 }
 
-func (p *poller) getStats(ssr *v1.ServiceScaleRecommendation) error {
+func (p *poller) getStats(ssr *autoscalev1.ServiceScaleRecommendation) error {
 	if err := p.loadClient(ssr); err != nil {
 		return err
 	}
 
-	svc, err := p.services.Get(ssr.Namespace, ssr.Spec.ServiceNameToRead)
+	rioNamespace := os.Getenv("RIO_NAMESPACE")
+	stackName := ssr.Labels[stackLabel]
+	projectName := ssr.Labels[projectLabel]
+	name := name.SafeConcatName(ssr.Name, stackName, projectName)
+	svc, err := p.services.Get(rioNamespace, name)
 	if err != nil {
 		return err
 	}
 
 	selector := labels.SelectorFromSet(labels.Set(svc.Spec.Selector))
 
-	pods, err := p.pods.List(ssr.Namespace, selector)
+	pods, err := p.pods.List(rioNamespace, selector)
 	if err != nil {
 		return err
 	}

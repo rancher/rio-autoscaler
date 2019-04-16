@@ -10,7 +10,7 @@ import (
 	"github.com/rancher/rio-autoscaler/pkg/controllers/gateway"
 	"github.com/rancher/rio-autoscaler/pkg/logger"
 	"github.com/rancher/rio-autoscaler/types"
-	riov1 "github.com/rancher/rio/types/apis/rio.cattle.io/v1"
+	riov1controller "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io/v1"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/proxy"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -27,14 +27,12 @@ const (
 
 func NewHandler(rContext *types.Context) Handler {
 	return Handler{
-		services:      rContext.Rio.Service,
-		serviceLister: rContext.Rio.Service.Cache(),
+		services: rContext.Rio.Rio().V1().Service(),
 	}
 }
 
 type Handler struct {
-	serviceLister riov1.ServiceClientCache
-	services      riov1.ServiceClient
+	services riov1controller.ServiceController
 }
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +40,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	namespace := r.Header.Get(RioNamespaceHeader)
 	port := r.Header.Get(RioPortHeader)
 
-	rioSvc, err := h.serviceLister.Get(namespace, name)
+	rioSvc, err := h.services.Cache().Get(namespace, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return

@@ -7,7 +7,6 @@ import (
 
 	"github.com/rancher/rio-autoscaler/types"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 var (
@@ -16,15 +15,15 @@ var (
 
 func Register(ctx context.Context, rContext *types.Context) error {
 	e := endpointHandler{}
-	rContext.Core.Endpoints.OnChange(ctx, "gateway-endpoint-watcher", e.Sync)
-	rContext.Core.Endpoints.OnRemove(ctx, "gateway-endpoint-watcher", e.Remove)
+	rContext.Core.Core().V1().Endpoints().OnChange(ctx, "gateway-endpoint-watcher", e.Sync)
+	rContext.Core.Core().V1().Endpoints().OnRemove(ctx, "gateway-endpoint-watcher", e.Remove)
 
 	return nil
 }
 
 type endpointHandler struct{}
 
-func (e endpointHandler) Sync(obj *corev1.Endpoints) (runtime.Object, error) {
+func (e endpointHandler) Sync(key string, obj *corev1.Endpoints) (*corev1.Endpoints, error) {
 	// todo: add a filter only for scale-to-zero services so that we don't have to keep a channel for every endpoint
 	if obj != nil && obj.DeletionTimestamp == nil {
 		ch := make(chan struct{}, 0)
@@ -54,7 +53,7 @@ func isEndpointReady(obj *corev1.Endpoints) bool {
 	return ready
 }
 
-func (e endpointHandler) Remove(obj *corev1.Endpoints) (runtime.Object, error) {
+func (e endpointHandler) Remove(key string, obj *corev1.Endpoints) (*corev1.Endpoints, error) {
 	if obj != nil {
 		EndpointChanMap.Delete(fmt.Sprintf("%s.%s", obj.Name, obj.Namespace))
 	}

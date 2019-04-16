@@ -4,37 +4,31 @@ import (
 	"context"
 	"time"
 
-	"github.com/rancher/norman/pkg/kv"
-
+	"github.com/rancher/wrangler/pkg/kv"
 	"github.com/knative/pkg/logging"
 	"github.com/rancher/rio-autoscaler/pkg/logger"
 	"github.com/rancher/rio-autoscaler/pkg/metrics"
-	v12 "github.com/rancher/rio-autoscaler/types/apis/core/v1"
-	"github.com/rancher/rio/types/apis/rio-autoscale.cattle.io/v1"
-	riov1 "github.com/rancher/rio/types/apis/rio.cattle.io/v1"
+	"github.com/rancher/rio-autoscaler/types"
 )
 
-func Register(ctx context.Context) error {
-	autoscaleClients := v1.ClientsFrom(ctx)
-	corev1Clients := v12.ClientsFrom(ctx)
-	riov1Clients := riov1.ClientsFrom(ctx)
+func Register(ctx context.Context, rContext *types.Context) error {
 	metrics := metrics.New(ctx)
 	metrics.Watch(func(key string) {
 		namespace, name := kv.Split(key, "/")
 		SyncMap.Store(key, false)
-		autoscaleClients.ServiceScaleRecommendation.Enqueue(namespace, name)
+		rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Enqueue(namespace, name)
 	})
 
 	handler := NewHandler(
 		logging.WithLogger(ctx, logger.SugaredLogger),
 		metrics,
-		riov1Clients.Service,
-		corev1Clients.Service.Cache(),
-		corev1Clients.Pod.Cache(),
+		rContext.Rio.Rio().V1().Service(),
+		rContext.Core.Core().V1().Service().Cache(),
+		rContext.Core.Core().V1().Pod().Cache(),
 	)
 
-	autoscaleClients.ServiceScaleRecommendation.OnChange(ctx, "ssr-controller", handler.OnChange)
-	autoscaleClients.ServiceScaleRecommendation.OnRemove(ctx, "ssr-controller", handler.OnRemove)
+	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().OnChange(ctx, "ssr-controller", handler.OnChange)
+	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().OnRemove(ctx, "ssr-controller", handler.OnRemove)
 
 	// resetting every 2 minutes
 	go func() {
@@ -44,7 +38,7 @@ func Register(ctx context.Context) error {
 			SyncMap.Range(func(key, value interface{}) bool {
 				SyncMap.Store(key, false)
 				ns, name := kv.Split(key.(string), "/")
-				autoscaleClients.ServiceScaleRecommendation.Enqueue(ns, name)
+				rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Enqueue(ns, name)
 				return true
 			})
 		}
