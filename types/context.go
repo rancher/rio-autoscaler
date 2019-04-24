@@ -5,7 +5,6 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-
 	autoscale "github.com/rancher/rio/pkg/generated/controllers/autoscale.rio.cattle.io"
 	"github.com/rancher/rio/pkg/generated/controllers/core"
 	networking "github.com/rancher/rio/pkg/generated/controllers/networking.istio.io"
@@ -42,6 +41,7 @@ func NewContext(namespace string, config *rest.Config) *Context {
 		AutoScale:  autoscale.NewFactoryFromConfigOrDie(config),
 		Core:       core.NewFactoryFromConfigOrDie(config),
 		Rio:        rio.NewFactoryFromConfigOrDie(config),
+		K8s:        kubernetes.NewForConfigOrDie(config),
 		Networking: networking.NewFactoryFromConfigOrDie(config),
 	}
 

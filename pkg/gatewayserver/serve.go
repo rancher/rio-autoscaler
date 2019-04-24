@@ -12,6 +12,7 @@ import (
 	"github.com/rancher/rio-autoscaler/types"
 	riov1controller "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io/v1"
 	"github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/proxy"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -40,13 +41,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	namespace := r.Header.Get(RioNamespaceHeader)
 	port := r.Header.Get(RioPortHeader)
 
-	rioSvc, err := h.services.Cache().Get(namespace, name)
+	rioSvc, err := h.services.Get(namespace, name, metav1.GetOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	if rioSvc.Spec.Scale == 0 {
-		rioSvc.Spec.Scale = 1
+	if rioSvc.Status.ObservedScale != nil && *rioSvc.Status.ObservedScale == 0 {
+		rioSvc.Status.ObservedScale = nil
 		logrus.Debugf("Activating service %s to scale 1", rioSvc.Name)
 		if _, err := h.services.Update(rioSvc); err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)

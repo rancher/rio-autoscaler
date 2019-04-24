@@ -76,11 +76,14 @@ func runGateway(c *cli.Context) error {
 	}
 
 	ctx, rioContext := types.BuildContext(ctx, namespace, restConfig)
-	leader.RunOrDie(ctx, namespace, "rio", rioContext.K8s, func(ctx context.Context) {
-		runtime.Must(controllers.Register(ctx, rioContext))
-		runtime.Must(rioContext.Start(ctx))
-		<-ctx.Done()
-	})
+	go func(){
+		leader.RunOrDie(ctx, namespace, "rio-autoscaler", rioContext.K8s, func(ctx context.Context) {
+			runtime.Must(controllers.Register(ctx, rioContext))
+			runtime.Must(rioContext.Start(ctx))
+			<-ctx.Done()
+		})
+	}()
+
 
 	gatewayHandler := gatewayserver.NewHandler(rioContext)
 	srv := &http.Server{

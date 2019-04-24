@@ -3,7 +3,6 @@ package servicescale
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/rancher/rio-autoscaler/pkg/metrics"
 	autoscalev1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
 	corev1controller "github.com/rancher/rio/pkg/generated/controllers/core/v1"
-	"github.com/rancher/rio/pkg/name"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -100,18 +98,14 @@ func (p *poller) getStats(ssr *autoscalev1.ServiceScaleRecommendation) error {
 		return err
 	}
 
-	rioNamespace := os.Getenv("RIO_NAMESPACE")
-	stackName := ssr.Labels[stackLabel]
-	projectName := ssr.Labels[projectLabel]
-	name := name.SafeConcatName(ssr.Name, stackName, projectName)
-	svc, err := p.services.Get(rioNamespace, name)
+	svc, err := p.services.Get(ssr.Namespace, ssr.Name)
 	if err != nil {
 		return err
 	}
 
 	selector := labels.SelectorFromSet(labels.Set(svc.Spec.Selector))
 
-	pods, err := p.pods.List(rioNamespace, selector)
+	pods, err := p.pods.List(ssr.Namespace, selector)
 	if err != nil {
 		return err
 	}

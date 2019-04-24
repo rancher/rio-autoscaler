@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/runtime"
+
 	kpa "github.com/knative/serving/pkg/apis/autoscaling/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/autoscaler"
@@ -14,11 +17,6 @@ import (
 	riov1controller "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-const (
-	stackLabel   = "rio.cattle.io/stack"
-	projectLabel = "rio.cattle.io/project"
 )
 
 var SyncMap sync.Map
@@ -48,7 +46,8 @@ func NewHandler(ctx context.Context, metrics autoscaling.KPAMetrics,
 	}
 }
 
-func (s *ssrHandler) OnChange(key string, ssr *autoscalev1.ServiceScaleRecommendation) (*autoscalev1.ServiceScaleRecommendation, error) {
+func (s *ssrHandler) OnChange(key string, obj runtime.Object) (runtime.Object, error) {
+	ssr := obj.(*autoscalev1.ServiceScaleRecommendation)
 	m, err := s.createMetric(ssr)
 	if err != nil {
 		return ssr, err
@@ -117,7 +116,9 @@ func SetDeploymentScale(rioServices riov1controller.ServiceController, ssr *auto
 
 		svc = svc.DeepCopy()
 
-		svc.Spec.Scale = int(*ssr.Status.DesiredScale)
+		logrus.Infof("Setting desired scale %v for %v/%v", *ssr.Status.DesiredScale, svc.Namespace, svc.Name)
+		observedScale := int(*ssr.Status.DesiredScale)
+		svc.Status.ObservedScale = &observedScale
 		if _, err := rioServices.Update(svc); err != nil {
 			return err
 		}

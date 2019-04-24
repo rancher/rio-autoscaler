@@ -4,11 +4,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/rancher/wrangler/pkg/kv"
+	"github.com/rancher/wrangler/pkg/generic"
+
 	"github.com/knative/pkg/logging"
 	"github.com/rancher/rio-autoscaler/pkg/logger"
 	"github.com/rancher/rio-autoscaler/pkg/metrics"
 	"github.com/rancher/rio-autoscaler/types"
+	"github.com/rancher/wrangler/pkg/kv"
 )
 
 func Register(ctx context.Context, rContext *types.Context) error {
@@ -27,7 +29,8 @@ func Register(ctx context.Context, rContext *types.Context) error {
 		rContext.Core.Core().V1().Pod().Cache(),
 	)
 
-	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().OnChange(ctx, "ssr-controller", handler.OnChange)
+	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().
+		AddGenericHandler(ctx, "ssr-controller", generic.UpdateOnChange(rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Updater(), handler.OnChange))
 	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().OnRemove(ctx, "ssr-controller", handler.OnRemove)
 
 	// resetting every 2 minutes
