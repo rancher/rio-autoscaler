@@ -36,12 +36,10 @@ type poller struct {
 	promURL string
 }
 
-func newPoller(ctx context.Context, ssr *autoscalev1.ServiceScaleRecommendation,
-	services corev1controller.ServiceCache, pods corev1controller.PodCache, recorder recorder) *poller {
+func newPoller(ctx context.Context, ssr *autoscalev1.ServiceScaleRecommendation, pods corev1controller.PodCache, recorder recorder) *poller {
 	p := &poller{
 		ssr:      ssr,
 		recorder: recorder,
-		services: services,
 		pods:     pods,
 	}
 	p.ctx, p.cancel = context.WithCancel(ctx)
@@ -98,12 +96,7 @@ func (p *poller) getStats(ssr *autoscalev1.ServiceScaleRecommendation) error {
 		return err
 	}
 
-	svc, err := p.services.Get(ssr.Namespace, ssr.Name)
-	if err != nil {
-		return err
-	}
-
-	selector := labels.SelectorFromSet(labels.Set(svc.Spec.Selector))
+	selector := labels.SelectorFromSet(labels.Set(ssr.Spec.Selector))
 
 	pods, err := p.pods.List(ssr.Namespace, selector)
 	if err != nil {

@@ -19,7 +19,7 @@ limitations under the License.
 package v1
 
 import (
-	"github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
+	v1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
 	clientset "github.com/rancher/rio/pkg/generated/clientset/versioned/typed/autoscale.rio.cattle.io/v1"
 	informers "github.com/rancher/rio/pkg/generated/informers/externalversions/autoscale.rio.cattle.io/v1"
 	"github.com/rancher/wrangler/pkg/generic"

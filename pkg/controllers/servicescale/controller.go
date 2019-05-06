@@ -2,8 +2,6 @@ package servicescale
 
 import (
 	"context"
-	"time"
-
 	"github.com/rancher/wrangler/pkg/generic"
 
 	"github.com/knative/pkg/logging"
@@ -17,7 +15,6 @@ func Register(ctx context.Context, rContext *types.Context) error {
 	metrics := metrics.New(ctx)
 	metrics.Watch(func(key string) {
 		namespace, name := kv.Split(key, "/")
-		SyncMap.Store(key, false)
 		rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Enqueue(namespace, name)
 	})
 
@@ -31,21 +28,6 @@ func Register(ctx context.Context, rContext *types.Context) error {
 
 	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().
 		AddGenericHandler(ctx, "ssr-controller", generic.UpdateOnChange(rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Updater(), handler.OnChange))
-	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().OnRemove(ctx, "ssr-controller", handler.OnRemove)
-
-	// resetting every 2 minutes
-	go func() {
-		ticker := time.NewTicker(time.Minute * 5)
-		defer ticker.Stop()
-		for range ticker.C {
-			SyncMap.Range(func(key, value interface{}) bool {
-				SyncMap.Store(key, false)
-				ns, name := kv.Split(key.(string), "/")
-				rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Enqueue(ns, name)
-				return true
-			})
-		}
-	}()
-
+	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().OnRemove(ctx, "ssr-controller-on-remove", handler.OnRemove)
 	return nil
 }

@@ -26,7 +26,7 @@ type RouterSpec struct {
 
 type RouterStatus struct {
 	PublicDomains []string                            `json:"publicDomains,omitempty"`
-	Endpoints     []Endpoint                          `json:"endpoint,omitempty"`
+	Endpoints     []string                            `json:"endpoint,omitempty"`
 	Conditions    []genericcondition.GenericCondition `json:"conditions,omitempty"`
 }
 
@@ -115,9 +115,7 @@ type Fault struct {
 }
 
 type Abort struct {
-	HTTPStatus  int    `json:"httpStatus,omitempty"`
-	HTTP2Status string `json:"http2Status,omitempty"`
-	GRPCStatus  string `json:"grpcStatus,omitempty"`
+	HTTPStatus int `json:"httpStatus,omitempty"`
 }
 
 type Match struct {

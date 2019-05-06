@@ -1,8 +1,10 @@
 package v1
 
 import (
-	"time"
+	"bytes"
+	"strconv"
 
+	"github.com/rancher/rio/pkg/apis/common"
 	"github.com/rancher/wrangler/pkg/condition"
 	"github.com/rancher/wrangler/pkg/genericcondition"
 	appsv1 "k8s.io/api/apps/v1"
@@ -41,9 +43,9 @@ type ServiceScale struct {
 }
 
 type AutoscaleConfig struct {
-	Concurrency int `json:"concurrency,omitempty"`
-	MinScale    int `json:"minScale,omitempty"`
-	MaxScale    int `json:"maxScale,omitempty"`
+	Concurrency *int `json:"concurrency,omitempty"`
+	MinScale    *int `json:"minScale,omitempty"`
+	MaxScale    *int `json:"maxScale,omitempty"`
 }
 
 type SystemServiceSpec struct {
@@ -56,9 +58,10 @@ type SystemServiceSpec struct {
 }
 
 type RolloutConfig struct {
-	Rollout          bool          `json:"rollout,omitempty"`
-	RolloutIncrement int           `json:"rolloutIncrement,omitempty"`
-	RolloutInterval  time.Duration `json:"rolloutInterval,omitempty"`
+	Rollout          bool `json:"rollout,omitempty"`
+	RolloutIncrement int  `json:"rolloutIncrement,omitempty"`
+	// count by seconds
+	RolloutInterval int `json:"rolloutInterval,omitempty"`
 }
 
 type ServiceSpec struct {
@@ -71,12 +74,14 @@ type ServiceSpec struct {
 	DisableServiceMesh bool         `json:"disableServiceMesh,omitempty"`
 	Permissions        []Permission `json:"permissions,omitempty"`
 	GlobalPermissions  []Permission `json:"globalPermissions,omitempty"`
+
+	SystemSpec *SystemServiceSpec `json:"systemSpec,omitempty"`
 }
 
 type PodDNSConfig struct {
-	Nameservers []string             `json:"nameservers,omitempty"`
-	Searches    []string             `json:"searches,omitempty"`
-	Options     []PodDNSConfigOption `json:"options,omitempty"`
+	Nameservers []string             `json:"dnsNameservers,omitempty"`
+	Searches    []string             `json:"dnsSearches,omitempty"`
+	Options     []PodDNSConfigOption `json:"dnsOptions,omitempty"`
 }
 
 type PodDNSConfigOption struct {
@@ -97,23 +102,24 @@ type NamedContainer struct {
 }
 
 type Container struct {
-	Image           string            `json:"image,omitempty"`
-	Build           ImageBuild        `json:"build,omitempty"`
-	Command         []string          `json:"command,omitempty"`
-	Args            []string          `json:"args,omitempty"`
-	WorkingDir      string            `json:"workingDir,omitempty"`
-	Ports           []ContainerPort   `json:"ports,omitempty"`
-	Env             []EnvVar          `json:"env,omitempty"`
-	CPUs            resource.Quantity `json:"cpus,omitempty"`
-	Memory          resource.Quantity `json:"memory,omitempty"`
-	Secrets         []DataMount       `json:"secrets,omitempty"`
-	Configs         []DataMount       `json:"configs,omitempty"`
-	LivenessProbe   *v1.Probe         `json:"livenessProbe,omitempty"`
-	ReadinessProbe  *v1.Probe         `json:"readinessProbe,omitempty"`
-	ImagePullPolicy v1.PullPolicy     `json:"imagePullPolicy,omitempty"`
-	Stdin           bool              `json:"stdin,omitempty"`
-	StdinOnce       bool              `json:"stdinOnce,omitempty"`
-	TTY             bool              `json:"tty,omitempty"`
+	Image           string             `json:"image,omitempty"`
+	Build           *ImageBuild        `json:"build,omitempty"`
+	Command         []string           `json:"command,omitempty"`
+	Args            []string           `json:"args,omitempty"`
+	WorkingDir      string             `json:"workingDir,omitempty"`
+	Ports           []ContainerPort    `json:"ports,omitempty"`
+	Env             []EnvVar           `json:"env,omitempty"`
+	CPUs            *resource.Quantity `json:"cpus,omitempty"`
+	Memory          *resource.Quantity `json:"memory,omitempty"`
+	Secrets         []DataMount        `json:"secrets,omitempty"`
+	Configs         []DataMount        `json:"configs,omitempty"`
+	LivenessProbe   *v1.Probe          `json:"livenessProbe,omitempty"`
+	ReadinessProbe  *v1.Probe          `json:"readinessProbe,omitempty"`
+	ImagePullPolicy v1.PullPolicy      `json:"imagePullPolicy,omitempty"`
+	Stdin           bool               `json:"stdin,omitempty"`
+	StdinOnce       bool               `json:"stdinOnce,omitempty"`
+	TTY             bool               `json:"tty,omitempty"`
+	Volumes         []Volume           `json:"volumes,omitempty"`
 
 	ContainerSecurityContext
 }
@@ -125,13 +131,17 @@ type DataMount struct {
 	Key       string `json:"key,omitempty"`
 }
 
+type Volume struct {
+	Name string
+	Path string
+}
+
 type EnvVar struct {
 	Name          string `json:"name,omitempty"`
 	Value         string `json:"value,omitempty"`
 	SecretName    string `json:"secretName,omitempty"`
 	ConfigMapName string `json:"configMapName,omitempty"`
 	Key           string `json:"key,omitempty"`
-	Optional      *bool  `json:"optional,omitempty"`
 }
 
 type PodConfig struct {
@@ -163,23 +173,38 @@ type ContainerPort struct {
 	TargetPort   int32    `json:"targetPort,omitempty"`
 }
 
-type ServiceStatus struct {
-	DeploymentStatus  *appsv1.DeploymentStatus            `json:"deploymentStatus,omitempty"`
-	DaemonSetStatus   *appsv1.DaemonSetStatus             `json:"daemonSetStatus,omitempty"`
-	StatefulSetStatus *appsv1.StatefulSetStatus           `json:"statefulSetStatus,omitempty"`
-	ScaleStatus       *ScaleStatus                        `json:"scaleStatus,omitempty"`
-	ObservedScale     *int                                `json:"observedScale,omitempty"`
-	ScaleOverride     *int                                `json:"scaleOverride,omitempty"`
-	ObservedWeight    *int                                `json:"observedWeight,omitempty"`
-	WeightOverride    *int                                `json:"weightOverride,omitempty"`
-	ContainerImages   map[string]string                   `json:"containerImages,omitempty"`
-	Conditions        []genericcondition.GenericCondition `json:"conditions,omitempty"`
-	Endpoints         []Endpoint                          `json:"endpoints,omitempty"`
-	PublicDomains     []string                            `json:"publicDomains,omitempty"`
+func (c ContainerPort) MaybeString() interface{} {
+	b := bytes.Buffer{}
+	if c.Port != 0 && c.TargetPort != 0 {
+		b.WriteString(strconv.FormatInt(int64(c.Port), 10))
+		b.WriteString(":")
+		b.WriteString(strconv.FormatInt(int64(c.TargetPort), 10))
+	} else if c.TargetPort != 0 {
+		b.WriteString(strconv.FormatInt(int64(c.TargetPort), 10))
+	}
+
+	if b.Len() > 0 && c.Protocol != "" && c.Protocol != "tcp" {
+		b.WriteString("/")
+		b.WriteString(string(c.Protocol))
+	}
+
+	return b.String()
 }
 
-type Endpoint struct {
-	URL string `json:"url,omitempty"`
+type ServiceStatus struct {
+	DeploymentStatus       *appsv1.DeploymentStatus            `json:"deploymentStatus,omitempty"`
+	DaemonSetStatus        *appsv1.DaemonSetStatus             `json:"daemonSetStatus,omitempty"`
+	StatefulSetStatus      *appsv1.StatefulSetStatus           `json:"statefulSetStatus,omitempty"`
+	ScaleStatus            *ScaleStatus                        `json:"scaleStatus,omitempty"`
+	ScaleFromZeroTimestamp *metav1.Time                        `json:"scaleFromZeroTimestamp,omitempty"`
+	ObservedScale          *int                                `json:"observedScale,omitempty"`
+	ScaleOverride          *int                                `json:"scaleOverride,omitempty"`
+	ObservedWeight         *int                                `json:"observedWeight,omitempty"`
+	WeightOverride         *int                                `json:"weightOverride,omitempty"`
+	ContainerImages        map[string]string                   `json:"containerImages,omitempty"`
+	Conditions             []genericcondition.GenericCondition `json:"conditions,omitempty"`
+	Endpoints              []string                            `json:"endpoints,omitempty"`
+	PublicDomains          []string                            `json:"publicDomains,omitempty"`
 }
 
 type ScaleStatus struct {
@@ -191,12 +216,34 @@ type ScaleStatus struct {
 
 type ImageBuild struct {
 	Repo       string `json:"repo,omitempty"`
-	Tag        string `json:"tag,omitempty"`
-	Commit     string `json:"commit,omitempty"`
+	Revision   string `json:"revision,omitempty"`
 	Branch     string `json:"branch,omitempty"`
-	StageOnly  string `json:"stageOnly,omitempty"`
+	StageOnly  bool   `json:"stageOnly,omitempty"`
 	DockerFile string `json:"dockerFile,omitempty"`
 	Template   string `json:"template,omitempty"`
 	Secret     string `json:"secret,omitempty"`
-	Hook       bool   `json:"hook,omitempty"`
+}
+
+func (in *Service) State() common.State {
+	state := common.StateFromConditionAndMeta(in.ObjectMeta, in.Status.Conditions)
+	if len(in.Status.Conditions) == 0 {
+		state.State = "pending"
+	}
+	if scaleIsZero(in) {
+		state.State = "inactive"
+	}
+	return state
+}
+
+func scaleIsZero(service *Service) bool {
+	if service.Status.ScaleStatus == nil {
+		return true
+	}
+	ready := service.Status.ScaleStatus.Ready
+	available := service.Status.ScaleStatus.Available
+	unavailable := service.Status.ScaleStatus.Unavailable
+	updated := service.Status.ScaleStatus.Updated
+	scale := service.Spec.Scale
+
+	return ready+available+unavailable+updated+scale == 0
 }

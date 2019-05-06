@@ -62,7 +62,7 @@ import:
 - package: github.com/rancher/rancher
   version: dff3da15ed34fe5f3847d4c355180d0c3e41ab21
 - package: github.com/rancher/rio
-  version: f78caba2ee36eb63dd05d328497de5779a10411e
+  version: f4ea6f2632ebd8051c7e28069443e9e1e36ce900
   repo: https://github.com/StrongMonkey/rio.git
 - package: github.com/rancher/wrangler
   version: b76ec8e2558efd9a1a996c1cb4d76eb258b1219f

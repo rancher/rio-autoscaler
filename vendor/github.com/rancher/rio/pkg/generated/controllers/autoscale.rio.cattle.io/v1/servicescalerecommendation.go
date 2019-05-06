@@ -21,7 +21,7 @@ package v1
 import (
 	"context"
 
-	"github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
+	v1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
 	clientset "github.com/rancher/rio/pkg/generated/clientset/versioned/typed/autoscale.rio.cattle.io/v1"
 	informers "github.com/rancher/rio/pkg/generated/informers/externalversions/autoscale.rio.cattle.io/v1"
 	listers "github.com/rancher/rio/pkg/generated/listers/autoscale.rio.cattle.io/v1"
@@ -130,8 +130,8 @@ func UpdateServiceScaleRecommendationOnChange(updater generic.Updater, handler S
 			copyObj = newObj
 		}
 		if obj.ResourceVersion == copyObj.ResourceVersion && !equality.Semantic.DeepEqual(obj, copyObj) {
-			newObj, _ := updater(copyObj)
-			if newObj != nil {
+			newObj, err := updater(copyObj)
+			if newObj != nil && err == nil {
 				copyObj = newObj.(*v1.ServiceScaleRecommendation)
 			}
 		}

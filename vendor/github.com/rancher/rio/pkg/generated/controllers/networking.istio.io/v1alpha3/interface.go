@@ -19,7 +19,7 @@ limitations under the License.
 package v1alpha3
 
 import (
-	"github.com/knative/pkg/apis/istio/v1alpha3"
+	v1alpha3 "github.com/knative/pkg/apis/istio/v1alpha3"
 	clientset "github.com/knative/pkg/client/clientset/versioned/typed/istio/v1alpha3"
 	informers "github.com/knative/pkg/client/informers/externalversions/istio/v1alpha3"
 	"github.com/rancher/wrangler/pkg/generic"

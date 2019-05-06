@@ -19,13 +19,14 @@ limitations under the License.
 package v1
 
 import (
-	"github.com/rancher/rio/pkg/apis/rio.cattle.io/v1"
+	v1 "github.com/rancher/rio/pkg/apis/rio.cattle.io/v1"
 	clientset "github.com/rancher/rio/pkg/generated/clientset/versioned/typed/rio.cattle.io/v1"
 	informers "github.com/rancher/rio/pkg/generated/informers/externalversions/rio.cattle.io/v1"
 	"github.com/rancher/wrangler/pkg/generic"
 )
 
 type Interface interface {
+	App() AppController
 	ExternalService() ExternalServiceController
 	PublicDomain() PublicDomainController
 	Router() RouterController
@@ -47,6 +48,9 @@ type version struct {
 	client            clientset.RioV1Interface
 }
 
+func (c *version) App() AppController {
+	return NewAppController(v1.SchemeGroupVersion.WithKind("App"), c.controllerManager, c.client, c.informers.Apps())
+}
 func (c *version) ExternalService() ExternalServiceController {
 	return NewExternalServiceController(v1.SchemeGroupVersion.WithKind("ExternalService"), c.controllerManager, c.client, c.informers.ExternalServices())
 }

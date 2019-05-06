@@ -5,21 +5,21 @@ package main
 
 import (
 	"context"
-	"github.com/rancher/rio-autoscaler/pkg/controllers"
-	"k8s.io/apimachinery/pkg/util/runtime"
 	"net/http"
 	"os"
 
+	"github.com/rancher/rio-autoscaler/pkg/controllers"
+	"k8s.io/apimachinery/pkg/util/runtime"
 	"github.com/rancher/rio-autoscaler/pkg/gatewayserver"
 	"github.com/rancher/rio-autoscaler/pkg/logger"
 	"github.com/rancher/rio-autoscaler/types"
+	"github.com/rancher/wrangler/pkg/leader"
 	"github.com/rancher/wrangler/pkg/signals"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"k8s.io/client-go/tools/clientcmd"
-	"github.com/rancher/wrangler/pkg/leader"
 )
 
 var (
@@ -76,14 +76,13 @@ func runGateway(c *cli.Context) error {
 	}
 
 	ctx, rioContext := types.BuildContext(ctx, namespace, restConfig)
-	go func(){
+	go func() {
 		leader.RunOrDie(ctx, namespace, "rio-autoscaler", rioContext.K8s, func(ctx context.Context) {
 			runtime.Must(controllers.Register(ctx, rioContext))
 			runtime.Must(rioContext.Start(ctx))
 			<-ctx.Done()
 		})
 	}()
-
 
 	gatewayHandler := gatewayserver.NewHandler(rioContext)
 	srv := &http.Server{

@@ -21,7 +21,7 @@ package v1alpha3
 import (
 	"context"
 
-	"github.com/knative/pkg/apis/istio/v1alpha3"
+	v1alpha3 "github.com/knative/pkg/apis/istio/v1alpha3"
 	clientset "github.com/knative/pkg/client/clientset/versioned/typed/istio/v1alpha3"
 	informers "github.com/knative/pkg/client/informers/externalversions/istio/v1alpha3"
 	listers "github.com/knative/pkg/client/listers/istio/v1alpha3"
@@ -130,8 +130,8 @@ func UpdateVirtualServiceOnChange(updater generic.Updater, handler VirtualServic
 			copyObj = newObj
 		}
 		if obj.ResourceVersion == copyObj.ResourceVersion && !equality.Semantic.DeepEqual(obj, copyObj) {
-			newObj, _ := updater(copyObj)
-			if newObj != nil {
+			newObj, err := updater(copyObj)
+			if newObj != nil && err == nil {
 				copyObj = newObj.(*v1alpha3.VirtualService)
 			}
 		}

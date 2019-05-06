@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
+
 	"k8s.io/apimachinery/pkg/runtime"
 
 	kpa "github.com/knative/serving/pkg/apis/autoscaling/v1alpha1"
@@ -103,28 +105,17 @@ func SetDeploymentScale(rioServices riov1controller.ServiceController, ssr *auto
 	if err != nil {
 		return err
 	}
-
-	current := svc.Spec.Scale
-
-	if current != int(*ssr.Status.DesiredScale) {
-		if current == 1 && *ssr.Status.DesiredScale == 0 {
-			synced, ok := SyncMap.Load(key(ssr))
-			if ok && synced.(bool) {
-				return nil
-			}
-		}
-
-		svc = svc.DeepCopy()
-
-		logrus.Infof("Setting desired scale %v for %v/%v", *ssr.Status.DesiredScale, svc.Namespace, svc.Name)
-		observedScale := int(*ssr.Status.DesiredScale)
-		svc.Status.ObservedScale = &observedScale
-		if _, err := rioServices.Update(svc); err != nil {
-			return err
-		}
+	// wait for a minute after scale from zero
+	if svc.Status.ScaleFromZeroTimestamp != nil && svc.Status.ScaleFromZeroTimestamp.Add(time.Minute).After(time.Now()) {
+		logrus.Infof("skipping setting scale because service  %s/%s is scaled from zero within a minute", svc.Namespace, svc.Name)
+		return nil
 	}
-	SyncMap.Store(key(ssr), true)
-
+	logrus.Infof("Setting desired scale %v for %v/%v", *ssr.Status.DesiredScale, svc.Namespace, svc.Name)
+	observedScale := int(*ssr.Status.DesiredScale)
+	svc.Status.ObservedScale = &observedScale
+	if _, err := rioServices.Update(svc); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -139,7 +130,7 @@ func (s *ssrHandler) monitor(ssr *autoscalev1.ServiceScaleRecommendation) {
 		return
 	}
 
-	p = newPoller(s.ctx, ssr, s.services, s.pods, func(stat autoscaler.Stat) {
+	p = newPoller(s.ctx, ssr, s.pods, func(stat autoscaler.Stat) {
 		s.metrics.(*autoscaler.MultiScaler).RecordStat(key, stat)
 	})
 
