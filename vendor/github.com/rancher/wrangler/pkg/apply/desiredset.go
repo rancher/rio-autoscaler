@@ -21,6 +21,7 @@ type desiredSet struct {
 	codeVersion      string
 	owner            runtime.Object
 	injectors        []injectors.ConfigInjector
+	ratelimitingQps  float32
 	injectorNames    []string
 	errs             []error
 }
@@ -35,6 +36,9 @@ func (o desiredSet) Err() error {
 }
 
 func (o desiredSet) Apply(set *objectset.ObjectSet) error {
+	if set == nil {
+		set = objectset.NewObjectSet()
+	}
 	o.objs = set
 	return o.apply()
 }
@@ -90,5 +94,10 @@ func (o desiredSet) WithStrictCaching() Apply {
 
 func (o desiredSet) WithDefaultNamespace(ns string) Apply {
 	o.defaultNamespace = ns
+	return o
+}
+
+func (o desiredSet) WithRateLimiting(ratelimitingQps float32) Apply {
+	o.ratelimitingQps = ratelimitingQps
 	return o
 }
