@@ -17,9 +17,9 @@ var (
 		EnableScaleToZero:                    true,
 		MaxScaleUpRate:                       10,
 		PanicWindow:                          6 * time.Second,
-		ScaleToZeroThreshold:                 8 * time.Minute,
-		ScaleToZeroGracePeriod:               4 * time.Minute,
-		ScaleToZeroIdlePeriod:                4 * time.Minute,
+		ScaleToZeroThreshold:                 2 * time.Minute,
+		ScaleToZeroGracePeriod:               1 * time.Minute,
+		ScaleToZeroIdlePeriod:                1 * time.Minute,
 		StableWindow:                         60 * time.Second,
 		TickInterval:                         2 * time.Second,
 	}

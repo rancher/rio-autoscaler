@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"sync"
 
 	"github.com/rancher/rio-autoscaler/types"
@@ -14,6 +15,7 @@ var (
 )
 
 func Register(ctx context.Context, rContext *types.Context) error {
+	logrus.Info("Starting gateway endpoint controller")
 	e := endpointHandler{}
 	rContext.Core.Core().V1().Endpoints().OnChange(ctx, "gateway-endpoint-watcher", e.Sync)
 	rContext.Core.Core().V1().Endpoints().OnRemove(ctx, "gateway-endpoint-watcher", e.Remove)

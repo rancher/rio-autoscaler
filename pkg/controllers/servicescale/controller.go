@@ -2,12 +2,13 @@ package servicescale
 
 import (
 	"context"
-	"github.com/rancher/wrangler/pkg/generic"
+	"github.com/sirupsen/logrus"
 
 	"github.com/knative/pkg/logging"
 	"github.com/rancher/rio-autoscaler/pkg/logger"
 	"github.com/rancher/rio-autoscaler/pkg/metrics"
 	"github.com/rancher/rio-autoscaler/types"
+	autoscalev1controller "github.com/rancher/rio/pkg/generated/controllers/autoscale.rio.cattle.io/v1"
 	"github.com/rancher/wrangler/pkg/kv"
 )
 
@@ -26,8 +27,9 @@ func Register(ctx context.Context, rContext *types.Context) error {
 		rContext.Core.Core().V1().Pod().Cache(),
 	)
 
-	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().
-		AddGenericHandler(ctx, "ssr-controller", generic.UpdateOnChange(rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Updater(), handler.OnChange))
+	logrus.Info("Starting ssr controller")
+	updator := autoscalev1controller.UpdateServiceScaleRecommendationOnChange(rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Updater(), handler.OnChange)
+	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().OnChange(ctx, "ssr-controller", updator)
 	rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().OnRemove(ctx, "ssr-controller-on-remove", handler.OnRemove)
 	return nil
 }

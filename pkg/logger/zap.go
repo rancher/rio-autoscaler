@@ -8,10 +8,10 @@ var (
 	SugaredLogger *zap.SugaredLogger
 )
 
-func InitLogger(debug bool) error {
+func InitLogger(debug string) error {
 	var Logger *zap.Logger
 	var err error
-	if debug {
+	if debug == "true" {
 		Logger, err = zap.NewDevelopment()
 	} else {
 		Logger, err = zap.NewProduction()

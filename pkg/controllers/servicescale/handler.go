@@ -8,8 +8,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"k8s.io/apimachinery/pkg/runtime"
-
 	kpa "github.com/knative/serving/pkg/apis/autoscaling/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/autoscaler"
@@ -48,14 +46,14 @@ func NewHandler(ctx context.Context, metrics autoscaling.KPAMetrics,
 	}
 }
 
-func (s *ssrHandler) OnChange(key string, obj runtime.Object) (runtime.Object, error) {
-	ssr := obj.(*autoscalev1.ServiceScaleRecommendation)
+func (s *ssrHandler) OnChange(key string, ssr *autoscalev1.ServiceScaleRecommendation) (*autoscalev1.ServiceScaleRecommendation, error) {
 	m, err := s.createMetric(ssr)
 	if err != nil {
 		return ssr, err
 	}
 
 	s.monitor(ssr)
+	logrus.Debugf("Desired scale %v calculated for service %s/%s", ssr.Namespace, ssr.Name)
 
 	ssr.Status.DesiredScale = bounded(m.DesiredScale, ssr.Spec.MinScale, ssr.Spec.MaxScale)
 	return ssr, SetDeploymentScale(s.rioServices, ssr)
@@ -93,6 +91,7 @@ func (s *ssrHandler) createMetric(ssr *autoscalev1.ServiceScaleRecommendation) (
 	key := key(ssr)
 	metric, err := s.metrics.Get(s.ctx, key)
 	if err != nil && errors.IsNotFound(err) {
+		logrus.Infof("creating metrics watcher service %s/%s", ssr.Namespace, ssr.Name)
 		return s.metrics.Create(s.ctx, toKPA(ssr))
 	} else if err != nil {
 		return nil, err
@@ -103,6 +102,9 @@ func (s *ssrHandler) createMetric(ssr *autoscalev1.ServiceScaleRecommendation) (
 func SetDeploymentScale(rioServices riov1controller.ServiceController, ssr *autoscalev1.ServiceScaleRecommendation) error {
 	svc, err := rioServices.Cache().Get(ssr.Namespace, ssr.Name)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
 		return err
 	}
 	// wait for a minute after scale from zero
@@ -110,8 +112,13 @@ func SetDeploymentScale(rioServices riov1controller.ServiceController, ssr *auto
 		logrus.Infof("skipping setting scale because service  %s/%s is scaled from zero within a minute", svc.Namespace, svc.Name)
 		return nil
 	}
-	logrus.Infof("Setting desired scale %v for %v/%v", *ssr.Status.DesiredScale, svc.Namespace, svc.Name)
+
 	observedScale := int(*ssr.Status.DesiredScale)
+	if svc.Status.ObservedScale != nil && *svc.Status.ObservedScale == observedScale {
+		return nil
+	}
+	logrus.Infof("Setting desired scale %v for %v/%v", *ssr.Status.DesiredScale, svc.Namespace, svc.Name)
+
 	svc.Status.ObservedScale = &observedScale
 	if _, err := rioServices.Update(svc); err != nil {
 		return err

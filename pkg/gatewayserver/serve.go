@@ -47,7 +47,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rioSvc.Status.ObservedScale != nil && *rioSvc.Status.ObservedScale == 0 {
-		rioSvc.Status.ObservedScale = nil
+		rioSvc.Status.ObservedScale = &[]int{1}[0]
 		t := metav1.NewTime(time.Now())
 		rioSvc.Status.ScaleFromZeroTimestamp = &t
 		logrus.Infof("Activating service %s to scale 1", rioSvc.Name)

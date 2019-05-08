@@ -36,8 +36,9 @@ func main() {
 			Name:   "kubeconfig",
 			EnvVar: "KUBECONFIG",
 		},
-		cli.BoolFlag{
+		cli.StringFlag{
 			Name: "debug",
+			EnvVar: "DEBUG",
 		},
 	}
 	app.Commands = []cli.Command{
@@ -63,7 +64,7 @@ func runGateway(c *cli.Context) error {
 	logrus.Info("Starting controller")
 	ctx := signals.SetupSignalHandler(context.Background())
 
-	if err := logger.InitLogger(c.GlobalBool("debug")); err != nil {
+	if err := logger.InitLogger(c.GlobalString("debug")); err != nil {
 		return err
 	}
 
