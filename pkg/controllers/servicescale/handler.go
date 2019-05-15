@@ -4,73 +4,75 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
+
+	"github.com/sirupsen/logrus"
 
 	kpa "github.com/knative/serving/pkg/apis/autoscaling/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/autoscaler"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/autoscaling"
-	"github.com/rancher/rio-autoscaler/types/apis/apps/v1beta1"
-	corev1client "github.com/rancher/rio-autoscaler/types/apis/core/v1"
-	"github.com/rancher/rio-autoscaler/types/apis/rio-autoscale.cattle.io/v1"
+	autoscalev1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
+	corev1controller "github.com/rancher/rio/pkg/generated/controllers/core/v1"
+	riov1controller "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
+var SyncMap sync.Map
+
 type ssrHandler struct {
-	ctx               context.Context
-	metrics           autoscaling.KPAMetrics
-	pollers           map[string]*poller
-	pollerLock        sync.Mutex
-	deploymentsLister v1beta1.DeploymentClientCache
-	deployments       v1beta1.DeploymentClient
-	services          corev1client.ServiceClientCache
-	pods              corev1client.PodClientCache
+	ctx         context.Context
+	metrics     autoscaling.KPAMetrics
+	pollers     map[string]*poller
+	pollerLock  sync.Mutex
+	rioServices riov1controller.ServiceController
+	services    corev1controller.ServiceCache
+	pods        corev1controller.PodCache
 }
 
 func NewHandler(ctx context.Context, metrics autoscaling.KPAMetrics,
-	depClient v1beta1.DeploymentClient,
-	serviceClientCache corev1client.ServiceClientCache,
-	podClientCache corev1client.PodClientCache) *ssrHandler {
+	rioServiceClient riov1controller.ServiceController,
+	serviceClientCache corev1controller.ServiceCache,
+	podClientCache corev1controller.PodCache) *ssrHandler {
 
 	return &ssrHandler{
-		ctx:               ctx,
-		metrics:           metrics,
-		pollers:           map[string]*poller{},
-		deploymentsLister: depClient.Cache(),
-		deployments:       depClient,
-		services:          serviceClientCache,
-		pods:              podClientCache,
+		ctx:         ctx,
+		metrics:     metrics,
+		pollers:     map[string]*poller{},
+		rioServices: rioServiceClient,
+		services:    serviceClientCache,
+		pods:        podClientCache,
 	}
 }
 
-func (s *ssrHandler) OnChange(ssr *v1.ServiceScaleRecommendation) (runtime.Object, error) {
+func (s *ssrHandler) OnChange(key string, ssr *autoscalev1.ServiceScaleRecommendation) (*autoscalev1.ServiceScaleRecommendation, error) {
 	m, err := s.createMetric(ssr)
 	if err != nil {
 		return ssr, err
 	}
 
 	s.monitor(ssr)
+	logrus.Debugf("Desired scale %v calculated for service %s/%s", ssr.Namespace, ssr.Name)
 
 	ssr.Status.DesiredScale = bounded(m.DesiredScale, ssr.Spec.MinScale, ssr.Spec.MaxScale)
-	return ssr, SetDeploymentScale(s.deployments, ssr, false)
+	return ssr, SetDeploymentScale(s.rioServices, ssr)
 }
 
-func bounded(value, lower, upper int32) int32 {
+func bounded(value, lower, upper int32) *int32 {
 	if value < lower {
-		return lower
+		return &lower
 	}
 	if upper > 0 && value > upper {
-		return upper
+		return &upper
 	}
-	return value
+	return &value
 }
 
-func (s *ssrHandler) OnRemove(ssr *v1.ServiceScaleRecommendation) (runtime.Object, error) {
+func (s *ssrHandler) OnRemove(key string, ssr *autoscalev1.ServiceScaleRecommendation) (*autoscalev1.ServiceScaleRecommendation, error) {
 	s.pollerLock.Lock()
 	defer s.pollerLock.Unlock()
 
-	key := key(ssr)
 	p := s.pollers[key]
 	if p != nil {
 		p.Stop()
@@ -80,15 +82,16 @@ func (s *ssrHandler) OnRemove(ssr *v1.ServiceScaleRecommendation) (runtime.Objec
 	return ssr, s.deleteMetric(ssr)
 }
 
-func (s *ssrHandler) deleteMetric(ssr *v1.ServiceScaleRecommendation) error {
+func (s *ssrHandler) deleteMetric(ssr *autoscalev1.ServiceScaleRecommendation) error {
 	key := key(ssr)
 	return s.metrics.Delete(s.ctx, key)
 }
 
-func (s *ssrHandler) createMetric(ssr *v1.ServiceScaleRecommendation) (*autoscaler.Metric, error) {
+func (s *ssrHandler) createMetric(ssr *autoscalev1.ServiceScaleRecommendation) (*autoscaler.Metric, error) {
 	key := key(ssr)
 	metric, err := s.metrics.Get(s.ctx, key)
 	if err != nil && errors.IsNotFound(err) {
+		logrus.Infof("creating metrics watcher service %s/%s", ssr.Namespace, ssr.Name)
 		return s.metrics.Create(s.ctx, toKPA(ssr))
 	} else if err != nil {
 		return nil, err
@@ -96,44 +99,34 @@ func (s *ssrHandler) createMetric(ssr *v1.ServiceScaleRecommendation) (*autoscal
 	return metric, nil
 }
 
-func SetDeploymentScale(deployments v1beta1.DeploymentClient, ssr *v1.ServiceScaleRecommendation, setZero bool) error {
-	if ssr.Spec.DeploymentName != "" {
+func SetDeploymentScale(rioServices riov1controller.ServiceController, ssr *autoscalev1.ServiceScaleRecommendation) error {
+	svc, err := rioServices.Cache().Get(ssr.Namespace, ssr.Name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	// wait for a minute after scale from zero
+	if svc.Status.ScaleFromZeroTimestamp != nil && svc.Status.ScaleFromZeroTimestamp.Add(time.Minute).After(time.Now()) {
+		logrus.Infof("skipping setting scale because service  %s/%s is scaled from zero within a minute", svc.Namespace, svc.Name)
 		return nil
 	}
 
-	dep, err := deployments.Cache().Get(ssr.Namespace, ssr.Spec.DeploymentName)
-	if err != nil {
+	observedScale := int(*ssr.Status.DesiredScale)
+	if svc.Status.ObservedScale != nil && *svc.Status.ObservedScale == observedScale {
+		return nil
+	}
+	logrus.Infof("Setting desired scale %v for %v/%v", *ssr.Status.DesiredScale, svc.Namespace, svc.Name)
+
+	svc.Status.ObservedScale = &observedScale
+	if _, err := rioServices.Update(svc); err != nil {
 		return err
 	}
-
-	current := int32(0)
-	if dep.Spec.Replicas != nil {
-		current = *dep.Spec.Replicas
-	}
-
-	if current != ssr.Status.DesiredScale {
-		// Never scale to zero, the endpoints controller will do that
-		if !setZero && current == 1 && ssr.Status.DesiredScale == 0 {
-			return nil
-		}
-
-		dep = dep.DeepCopy()
-		if ssr.Status.DesiredScale == 0 {
-			scale := int32(1)
-			dep.Spec.Replicas = &scale
-		} else {
-			dep.Spec.Replicas = &ssr.Status.DesiredScale
-		}
-
-		dep.Spec.Replicas = &ssr.Status.DesiredScale
-		_, err := deployments.Update(dep)
-		return err
-	}
-
 	return nil
 }
 
-func (s *ssrHandler) monitor(ssr *v1.ServiceScaleRecommendation) {
+func (s *ssrHandler) monitor(ssr *autoscalev1.ServiceScaleRecommendation) {
 	s.pollerLock.Lock()
 	defer s.pollerLock.Unlock()
 
@@ -144,14 +137,14 @@ func (s *ssrHandler) monitor(ssr *v1.ServiceScaleRecommendation) {
 		return
 	}
 
-	p = newPoller(s.ctx, ssr, s.services, s.pods, func(stat autoscaler.Stat) {
+	p = newPoller(s.ctx, ssr, s.pods, func(stat autoscaler.Stat) {
 		s.metrics.(*autoscaler.MultiScaler).RecordStat(key, stat)
 	})
 
 	s.pollers[key] = p
 }
 
-func toKPA(ssr *v1.ServiceScaleRecommendation) *kpa.PodAutoscaler {
+func toKPA(ssr *autoscalev1.ServiceScaleRecommendation) *kpa.PodAutoscaler {
 	return &kpa.PodAutoscaler{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PodAutoscaler",
@@ -159,7 +152,7 @@ func toKPA(ssr *v1.ServiceScaleRecommendation) *kpa.PodAutoscaler {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ssr.Namespace,
-			Name:      ssr.Namespace,
+			Name:      ssr.Name,
 		},
 		Spec: kpa.PodAutoscalerSpec{
 			ContainerConcurrency: v1alpha1.RevisionContainerConcurrencyType(ssr.Spec.Concurrency),
@@ -167,6 +160,6 @@ func toKPA(ssr *v1.ServiceScaleRecommendation) *kpa.PodAutoscaler {
 	}
 }
 
-func key(ssr *v1.ServiceScaleRecommendation) string {
+func key(ssr *autoscalev1.ServiceScaleRecommendation) string {
 	return fmt.Sprintf("%s/%s", ssr.Namespace, ssr.Name)
 }
