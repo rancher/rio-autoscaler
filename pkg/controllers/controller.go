@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+
 	"github.com/rancher/rio-autoscaler/pkg/controllers/gateway"
 	"github.com/rancher/rio-autoscaler/pkg/controllers/servicescale"
 	"github.com/rancher/rio-autoscaler/types"

@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/rancher/rio-autoscaler/pkg/controllers"
-	"k8s.io/apimachinery/pkg/util/runtime"
 	"github.com/rancher/rio-autoscaler/pkg/gatewayserver"
 	"github.com/rancher/rio-autoscaler/pkg/logger"
 	"github.com/rancher/rio-autoscaler/types"
@@ -19,6 +18,7 @@ import (
 	"github.com/urfave/cli"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -37,7 +37,7 @@ func main() {
 			EnvVar: "KUBECONFIG",
 		},
 		cli.StringFlag{
-			Name: "debug",
+			Name:   "debug",
 			EnvVar: "DEBUG",
 		},
 	}

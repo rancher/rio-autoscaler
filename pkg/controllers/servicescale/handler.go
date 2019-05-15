@@ -6,8 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	kpa "github.com/knative/serving/pkg/apis/autoscaling/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/autoscaler"
@@ -15,13 +13,14 @@ import (
 	autoscalev1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
 	corev1controller "github.com/rancher/rio/pkg/generated/controllers/core/v1"
 	riov1controller "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io/v1"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var SyncMap sync.Map
 
-type ssrHandler struct {
+type SSRHandler struct {
 	ctx         context.Context
 	metrics     autoscaling.KPAMetrics
 	pollers     map[string]*poller
@@ -34,9 +33,9 @@ type ssrHandler struct {
 func NewHandler(ctx context.Context, metrics autoscaling.KPAMetrics,
 	rioServiceClient riov1controller.ServiceController,
 	serviceClientCache corev1controller.ServiceCache,
-	podClientCache corev1controller.PodCache) *ssrHandler {
+	podClientCache corev1controller.PodCache) *SSRHandler {
 
-	return &ssrHandler{
+	return &SSRHandler{
 		ctx:         ctx,
 		metrics:     metrics,
 		pollers:     map[string]*poller{},
@@ -46,14 +45,14 @@ func NewHandler(ctx context.Context, metrics autoscaling.KPAMetrics,
 	}
 }
 
-func (s *ssrHandler) OnChange(key string, ssr *autoscalev1.ServiceScaleRecommendation) (*autoscalev1.ServiceScaleRecommendation, error) {
+func (s *SSRHandler) OnChange(key string, ssr *autoscalev1.ServiceScaleRecommendation) (*autoscalev1.ServiceScaleRecommendation, error) {
 	m, err := s.createMetric(ssr)
 	if err != nil {
 		return ssr, err
 	}
 
 	s.monitor(ssr)
-	logrus.Debugf("Desired scale %v calculated for service %s/%s", ssr.Namespace, ssr.Name)
+	logrus.Debugf("Desired scale %v calculated for service %s/%s", m.DesiredScale, ssr.Namespace, ssr.Name)
 
 	ssr.Status.DesiredScale = bounded(m.DesiredScale, ssr.Spec.MinScale, ssr.Spec.MaxScale)
 	return ssr, SetDeploymentScale(s.rioServices, ssr)
@@ -69,7 +68,7 @@ func bounded(value, lower, upper int32) *int32 {
 	return &value
 }
 
-func (s *ssrHandler) OnRemove(key string, ssr *autoscalev1.ServiceScaleRecommendation) (*autoscalev1.ServiceScaleRecommendation, error) {
+func (s *SSRHandler) OnRemove(key string, ssr *autoscalev1.ServiceScaleRecommendation) (*autoscalev1.ServiceScaleRecommendation, error) {
 	s.pollerLock.Lock()
 	defer s.pollerLock.Unlock()
 
@@ -82,12 +81,12 @@ func (s *ssrHandler) OnRemove(key string, ssr *autoscalev1.ServiceScaleRecommend
 	return ssr, s.deleteMetric(ssr)
 }
 
-func (s *ssrHandler) deleteMetric(ssr *autoscalev1.ServiceScaleRecommendation) error {
+func (s *SSRHandler) deleteMetric(ssr *autoscalev1.ServiceScaleRecommendation) error {
 	key := key(ssr)
 	return s.metrics.Delete(s.ctx, key)
 }
 
-func (s *ssrHandler) createMetric(ssr *autoscalev1.ServiceScaleRecommendation) (*autoscaler.Metric, error) {
+func (s *SSRHandler) createMetric(ssr *autoscalev1.ServiceScaleRecommendation) (*autoscaler.Metric, error) {
 	key := key(ssr)
 	metric, err := s.metrics.Get(s.ctx, key)
 	if err != nil && errors.IsNotFound(err) {
@@ -126,7 +125,7 @@ func SetDeploymentScale(rioServices riov1controller.ServiceController, ssr *auto
 	return nil
 }
 
-func (s *ssrHandler) monitor(ssr *autoscalev1.ServiceScaleRecommendation) {
+func (s *SSRHandler) monitor(ssr *autoscalev1.ServiceScaleRecommendation) {
 	s.pollerLock.Lock()
 	defer s.pollerLock.Unlock()
 

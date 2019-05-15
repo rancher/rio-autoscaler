@@ -1,8 +1,6 @@
 /.dapper
 /.cache
-/.trash-cache
-/example/autoscaler
-.idea
 /bin
 /dist
 *.swp
+.idea

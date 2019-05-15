@@ -1,3 +1,3 @@
 FROM alpine
-COPY rio-autoscaler /usr/bin/
+COPY bin/rio-autoscaler /usr/bin/
 CMD ["rio-autoscaler"]
