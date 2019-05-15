@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	kpa "github.com/knative/serving/pkg/apis/autoscaling/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
@@ -55,7 +54,7 @@ func (s *SSRHandler) OnChange(key string, ssr *autoscalev1.ServiceScaleRecommend
 	logrus.Debugf("Desired scale %v calculated for service %s/%s", m.DesiredScale, ssr.Namespace, ssr.Name)
 
 	ssr.Status.DesiredScale = bounded(m.DesiredScale, ssr.Spec.MinScale, ssr.Spec.MaxScale)
-	return ssr, SetDeploymentScale(s.rioServices, ssr)
+	return ssr, nil
 }
 
 func bounded(value, lower, upper int32) *int32 {
@@ -96,33 +95,6 @@ func (s *SSRHandler) createMetric(ssr *autoscalev1.ServiceScaleRecommendation) (
 		return nil, err
 	}
 	return metric, nil
-}
-
-func SetDeploymentScale(rioServices riov1controller.ServiceController, ssr *autoscalev1.ServiceScaleRecommendation) error {
-	svc, err := rioServices.Cache().Get(ssr.Namespace, ssr.Name)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-		return err
-	}
-	// wait for a minute after scale from zero
-	if svc.Status.ScaleFromZeroTimestamp != nil && svc.Status.ScaleFromZeroTimestamp.Add(time.Minute).After(time.Now()) {
-		logrus.Infof("skipping setting scale because service  %s/%s is scaled from zero within a minute", svc.Namespace, svc.Name)
-		return nil
-	}
-
-	observedScale := int(*ssr.Status.DesiredScale)
-	if svc.Status.ObservedScale != nil && *svc.Status.ObservedScale == observedScale {
-		return nil
-	}
-	logrus.Infof("Setting desired scale %v for %v/%v", *ssr.Status.DesiredScale, svc.Namespace, svc.Name)
-
-	svc.Status.ObservedScale = &observedScale
-	if _, err := rioServices.Update(svc); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *SSRHandler) monitor(ssr *autoscalev1.ServiceScaleRecommendation) {
