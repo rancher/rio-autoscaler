@@ -77,14 +77,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveFQDN(name, namespace, port string, w http.ResponseWriter, r *http.Request) {
-	targetUrl := &url.URL{
+	targetURL := &url.URL{
 		Scheme: "http",
 		Host:   fmt.Sprintf("%s.%s.svc.cluster.local:%s", name, namespace, port),
 		Path:   r.URL.Path,
 	}
-	r.URL = targetUrl
-	r.URL.Host = targetUrl.Host
-	r.Host = targetUrl.Host
+	r.URL = targetURL
+	r.URL.Host = targetURL.Host
+	r.Host = targetURL.Host
 
 	// todo: check if 503 is actually coming from application or envoy
 	shouldRetry := activatorutil.RetryStatus(http.StatusServiceUnavailable)
@@ -95,7 +95,7 @@ func serveFQDN(name, namespace, port string, w http.ResponseWriter, r *http.Requ
 	}
 
 	rt := activatorutil.NewRetryRoundTripper(activatorutil.AutoTransport, logger.SugaredLogger, backoffSettings, shouldRetry)
-	httpProxy := proxy.NewUpgradeAwareHandler(targetUrl, rt, true, false, er)
+	httpProxy := proxy.NewUpgradeAwareHandler(targetURL, rt, true, false, er)
 	httpProxy.ServeHTTP(w, r)
 }
 

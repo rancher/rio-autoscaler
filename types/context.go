@@ -3,14 +3,14 @@ package types
 import (
 	"context"
 
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	autoscale "github.com/rancher/rio/pkg/generated/controllers/autoscale.rio.cattle.io"
 	"github.com/rancher/rio/pkg/generated/controllers/core"
 	networking "github.com/rancher/rio/pkg/generated/controllers/networking.istio.io"
 	rio "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io"
 	"github.com/rancher/wrangler/pkg/apply"
 	"github.com/rancher/wrangler/pkg/start"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type contextKey struct{}

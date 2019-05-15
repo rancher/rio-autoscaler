@@ -135,6 +135,8 @@ func (p *poller) getPodStat(pod *corev1.Pod) (autoscaler.Stat, error) {
 	ac, err := p.promAPI.Query(context.Background(), formatActiveRequest(pod), t)
 	if ac.Type() != model.ValVector {
 		return autoscaler.Stat{}, errors.Errorf("unexpected value type %v", ac.Type().String())
+	} else if err != nil {
+		return autoscaler.Stat{}, err
 	}
 	acs := 0.0
 	vector = ac.(model.Vector)

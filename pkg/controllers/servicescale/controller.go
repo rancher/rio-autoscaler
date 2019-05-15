@@ -2,7 +2,6 @@ package servicescale
 
 import (
 	"context"
-	"github.com/sirupsen/logrus"
 
 	"github.com/knative/pkg/logging"
 	"github.com/rancher/rio-autoscaler/pkg/logger"
@@ -10,6 +9,7 @@ import (
 	"github.com/rancher/rio-autoscaler/types"
 	autoscalev1controller "github.com/rancher/rio/pkg/generated/controllers/autoscale.rio.cattle.io/v1"
 	"github.com/rancher/wrangler/pkg/kv"
+	"github.com/sirupsen/logrus"
 )
 
 func Register(ctx context.Context, rContext *types.Context) error {
