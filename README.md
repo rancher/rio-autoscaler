@@ -1,7 +1,7 @@
 rio-autoscaler
 ========
 
-Auto-scaler component used by rio to scale services based on QPS and request load
+A simple autoscaler based active request of pods and scale deployment
 
 ## Building
 
