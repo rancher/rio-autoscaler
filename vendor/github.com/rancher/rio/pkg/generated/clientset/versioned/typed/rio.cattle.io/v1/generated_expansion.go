@@ -18,12 +18,10 @@ limitations under the License.
 
 package v1
 
-type AppExpansion interface{}
-
 type ExternalServiceExpansion interface{}
-
-type PublicDomainExpansion interface{}
 
 type RouterExpansion interface{}
 
 type ServiceExpansion interface{}
+
+type StackExpansion interface{}

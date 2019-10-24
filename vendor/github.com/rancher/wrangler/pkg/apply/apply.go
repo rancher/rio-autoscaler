@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -20,7 +22,10 @@ const (
 
 type Patcher func(namespace, name string, pt types.PatchType, data []byte) (runtime.Object, error)
 
-type ClientFactory func(gvk schema.GroupVersionKind) (dynamic.NamespaceableResourceInterface, error)
+// return false if the Reconciler did not handler this object
+type Reconciler func(oldObj runtime.Object, newObj runtime.Object) (bool, error)
+
+type ClientFactory func(gvr schema.GroupVersionResource) (dynamic.NamespaceableResourceInterface, error)
 
 type InformerGetter interface {
 	Informer() cache.SharedIndexInformer
@@ -29,15 +34,31 @@ type InformerGetter interface {
 
 type Apply interface {
 	Apply(set *objectset.ObjectSet) error
+	ApplyObjects(objs ...runtime.Object) error
 	WithCacheTypes(igs ...InformerGetter) Apply
 	WithSetID(id string) Apply
 	WithOwner(obj runtime.Object) Apply
 	WithInjector(injs ...injectors.ConfigInjector) Apply
 	WithInjectorName(injs ...string) Apply
 	WithPatcher(gvk schema.GroupVersionKind, patchers Patcher) Apply
+	WithReconciler(gvk schema.GroupVersionKind, reconciler Reconciler) Apply
 	WithStrictCaching() Apply
+	WithDynamicLookup() Apply
+	WithRestrictClusterScoped() Apply
 	WithDefaultNamespace(ns string) Apply
+	WithListerNamespace(ns string) Apply
 	WithRateLimiting(ratelimitingQps float32) Apply
+	WithNoDelete() Apply
+	WithSetOwnerReference(controller, block bool) Apply
+}
+
+func NewForConfig(cfg *rest.Config) (Apply, error) {
+	k8s, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return New(k8s.Discovery(), NewClientFactory(cfg)), nil
 }
 
 func New(discovery discovery.DiscoveryInterface, cf ClientFactory, igs ...InformerGetter) Apply {
@@ -96,7 +117,7 @@ func (c *clients) client(gvk schema.GroupVersionKind) (dynamic.NamespaceableReso
 			continue
 		}
 
-		client, err := c.clientFactory(gvk)
+		client, err := c.clientFactory(gvk.GroupVersion().WithResource(resource.Name))
 		if err != nil {
 			return nil, err
 		}
@@ -114,11 +135,19 @@ func (a *apply) newDesiredSet() desiredSet {
 		a:                a,
 		defaultNamespace: defaultNamespace,
 		ratelimitingQps:  1,
+		reconcilers:      defaultReconcilers,
+		strictCaching:    true,
 	}
 }
 
 func (a *apply) Apply(set *objectset.ObjectSet) error {
 	return a.newDesiredSet().Apply(set)
+}
+
+func (a *apply) ApplyObjects(objs ...runtime.Object) error {
+	os := objectset.NewObjectSet()
+	os.Add(objs...)
+	return a.newDesiredSet().Apply(os)
 }
 
 func (a *apply) WithSetID(id string) Apply {
@@ -145,14 +174,38 @@ func (a *apply) WithPatcher(gvk schema.GroupVersionKind, patcher Patcher) Apply 
 	return a.newDesiredSet().WithPatcher(gvk, patcher)
 }
 
+func (a *apply) WithReconciler(gvk schema.GroupVersionKind, reconciler Reconciler) Apply {
+	return a.newDesiredSet().WithReconciler(gvk, reconciler)
+}
+
 func (a *apply) WithStrictCaching() Apply {
 	return a.newDesiredSet().WithStrictCaching()
+}
+
+func (a *apply) WithDynamicLookup() Apply {
+	return a.newDesiredSet().WithDynamicLookup()
+}
+
+func (a *apply) WithRestrictClusterScoped() Apply {
+	return a.newDesiredSet().WithRestrictClusterScoped()
 }
 
 func (a *apply) WithDefaultNamespace(ns string) Apply {
 	return a.newDesiredSet().WithDefaultNamespace(ns)
 }
 
+func (a *apply) WithListerNamespace(ns string) Apply {
+	return a.newDesiredSet().WithListerNamespace(ns)
+}
+
 func (a *apply) WithRateLimiting(ratelimitingQps float32) Apply {
 	return a.newDesiredSet().WithRateLimiting(ratelimitingQps)
+}
+
+func (a *apply) WithNoDelete() Apply {
+	return a.newDesiredSet().WithNoDelete()
+}
+
+func (a *apply) WithSetOwnerReference(controller, block bool) Apply {
+	return a.newDesiredSet().WithSetOwnerReference(controller, block)
 }

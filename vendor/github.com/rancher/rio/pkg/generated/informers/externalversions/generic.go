@@ -21,11 +21,8 @@ package externalversions
 import (
 	"fmt"
 
-	v1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
-	gitriocattleiov1 "github.com/rancher/rio/pkg/apis/git.rio.cattle.io/v1"
-	projectriocattleiov1 "github.com/rancher/rio/pkg/apis/project.rio.cattle.io/v1"
+	v1 "github.com/rancher/rio/pkg/apis/admin.rio.cattle.io/v1"
 	riocattleiov1 "github.com/rancher/rio/pkg/apis/rio.cattle.io/v1"
-	webhookinatorriocattleiov1 "github.com/rancher/rio/pkg/apis/webhookinator.rio.cattle.io/v1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -56,37 +53,25 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=autoscale.rio.cattle.io, Version=v1
-	case v1.SchemeGroupVersion.WithResource("servicescalerecommendations"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Autoscale().V1().ServiceScaleRecommendations().Informer()}, nil
-
-		// Group=git.rio.cattle.io, Version=v1
-	case gitriocattleiov1.SchemeGroupVersion.WithResource("gitmodules"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Git().V1().GitModules().Informer()}, nil
-
-		// Group=project.rio.cattle.io, Version=v1
-	case projectriocattleiov1.SchemeGroupVersion.WithResource("clusterdomains"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Project().V1().ClusterDomains().Informer()}, nil
-	case projectriocattleiov1.SchemeGroupVersion.WithResource("features"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Project().V1().Features().Informer()}, nil
+	// Group=admin.rio.cattle.io, Version=v1
+	case v1.SchemeGroupVersion.WithResource("clusterdomains"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Admin().V1().ClusterDomains().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("publicdomains"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Admin().V1().PublicDomains().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("rioinfos"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Admin().V1().RioInfos().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("systemstacks"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Admin().V1().SystemStacks().Informer()}, nil
 
 		// Group=rio.cattle.io, Version=v1
-	case riocattleiov1.SchemeGroupVersion.WithResource("apps"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Rio().V1().Apps().Informer()}, nil
 	case riocattleiov1.SchemeGroupVersion.WithResource("externalservices"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Rio().V1().ExternalServices().Informer()}, nil
-	case riocattleiov1.SchemeGroupVersion.WithResource("publicdomains"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Rio().V1().PublicDomains().Informer()}, nil
 	case riocattleiov1.SchemeGroupVersion.WithResource("routers"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Rio().V1().Routers().Informer()}, nil
 	case riocattleiov1.SchemeGroupVersion.WithResource("services"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Rio().V1().Services().Informer()}, nil
-
-		// Group=webhookinator.rio.cattle.io, Version=v1
-	case webhookinatorriocattleiov1.SchemeGroupVersion.WithResource("gitwebhookexecutions"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Webhookinator().V1().GitWebHookExecutions().Informer()}, nil
-	case webhookinatorriocattleiov1.SchemeGroupVersion.WithResource("gitwebhookreceivers"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Webhookinator().V1().GitWebHookReceivers().Informer()}, nil
+	case riocattleiov1.SchemeGroupVersion.WithResource("stacks"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Rio().V1().Stacks().Informer()}, nil
 
 	}
 

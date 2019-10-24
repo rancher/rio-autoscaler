@@ -23,11 +23,17 @@ import (
 	"time"
 
 	clientset "github.com/rancher/rio/pkg/generated/clientset/versioned"
+	scheme "github.com/rancher/rio/pkg/generated/clientset/versioned/scheme"
 	informers "github.com/rancher/rio/pkg/generated/informers/externalversions"
 	"github.com/rancher/wrangler/pkg/generic"
+	"github.com/rancher/wrangler/pkg/schemes"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 )
+
+func init() {
+	scheme.AddToScheme(schemes.All)
+}
 
 type Factory struct {
 	synced            bool
@@ -76,6 +82,10 @@ func NewFactory(clientset clientset.Interface, informerFactory informers.SharedI
 		clientset:         clientset,
 		informerFactory:   informerFactory,
 	}
+}
+
+func (c *Factory) Controllers() map[schema.GroupVersionKind]*generic.Controller {
+	return c.controllerManager.Controllers()
 }
 
 func (c *Factory) SetThreadiness(gvk schema.GroupVersionKind, threadiness int) {

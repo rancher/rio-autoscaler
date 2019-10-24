@@ -27,6 +27,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+var (
+	ExternalServiceResourceName = "externalservices"
+	RouterResourceName          = "routers"
+	ServiceResourceName         = "services"
+	StackResourceName           = "stacks"
+)
+
 // SchemeGroupVersion is group version used to register these objects
 var SchemeGroupVersion = schema.GroupVersion{Group: rio.GroupName, Version: "v1"}
 
@@ -48,16 +55,14 @@ var (
 // Adds the list of known types to Scheme.
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
-		&App{},
-		&AppList{},
 		&ExternalService{},
 		&ExternalServiceList{},
-		&PublicDomain{},
-		&PublicDomainList{},
 		&Router{},
 		&RouterList{},
 		&Service{},
 		&ServiceList{},
+		&Stack{},
+		&StackList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil
