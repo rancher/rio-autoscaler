@@ -27,11 +27,10 @@ import (
 
 type RioV1Interface interface {
 	RESTClient() rest.Interface
-	AppsGetter
 	ExternalServicesGetter
-	PublicDomainsGetter
 	RoutersGetter
 	ServicesGetter
+	StacksGetter
 }
 
 // RioV1Client is used to interact with features provided by the rio.cattle.io group.
@@ -39,16 +38,8 @@ type RioV1Client struct {
 	restClient rest.Interface
 }
 
-func (c *RioV1Client) Apps(namespace string) AppInterface {
-	return newApps(c, namespace)
-}
-
 func (c *RioV1Client) ExternalServices(namespace string) ExternalServiceInterface {
 	return newExternalServices(c, namespace)
-}
-
-func (c *RioV1Client) PublicDomains(namespace string) PublicDomainInterface {
-	return newPublicDomains(c, namespace)
 }
 
 func (c *RioV1Client) Routers(namespace string) RouterInterface {
@@ -57,6 +48,10 @@ func (c *RioV1Client) Routers(namespace string) RouterInterface {
 
 func (c *RioV1Client) Services(namespace string) ServiceInterface {
 	return newServices(c, namespace)
+}
+
+func (c *RioV1Client) Stacks(namespace string) StackInterface {
+	return newStacks(c, namespace)
 }
 
 // NewForConfig creates a new RioV1Client for the given config.

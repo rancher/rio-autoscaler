@@ -19,11 +19,8 @@ limitations under the License.
 package scheme
 
 import (
-	autoscalev1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
-	gitv1 "github.com/rancher/rio/pkg/apis/git.rio.cattle.io/v1"
-	projectv1 "github.com/rancher/rio/pkg/apis/project.rio.cattle.io/v1"
+	adminv1 "github.com/rancher/rio/pkg/apis/admin.rio.cattle.io/v1"
 	riov1 "github.com/rancher/rio/pkg/apis/rio.cattle.io/v1"
-	webhookinatorv1 "github.com/rancher/rio/pkg/apis/webhookinator.rio.cattle.io/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -35,11 +32,8 @@ var Scheme = runtime.NewScheme()
 var Codecs = serializer.NewCodecFactory(Scheme)
 var ParameterCodec = runtime.NewParameterCodec(Scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
+	adminv1.AddToScheme,
 	riov1.AddToScheme,
-	autoscalev1.AddToScheme,
-	gitv1.AddToScheme,
-	webhookinatorv1.AddToScheme,
-	projectv1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition

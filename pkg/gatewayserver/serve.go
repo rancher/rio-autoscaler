@@ -4,13 +4,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"sync"
 	"time"
 
-	activatorutil "github.com/knative/serving/pkg/activator/util"
-	"github.com/rancher/rio-autoscaler/pkg/controllers/gateway"
-	"github.com/rancher/rio-autoscaler/pkg/logger"
+	"github.com/rancher/rio/modules/service/controllers/service/populate/serviceports"
+
+	"github.com/rancher/rio-autoscaler/pkg/controllers/servicescale"
 	"github.com/rancher/rio-autoscaler/types"
 	riov1controller "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io/v1"
+	"github.com/rancher/rio/pkg/services"
+	name2 "github.com/rancher/wrangler/pkg/name"
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/proxy"
@@ -23,78 +27,82 @@ const (
 	exponentialBackoffBase = 1.3
 	RioNameHeader          = "X-Rio-ServiceName"
 	RioNamespaceHeader     = "X-Rio-Namespace"
-	RioPortHeader          = "X-Rio-ServicePort"
 )
 
-func NewHandler(rContext *types.Context) Handler {
+func NewHandler(rContext *types.Context, lock *sync.RWMutex, autoscalers map[string]*servicescale.SimpleScale) Handler {
 	return Handler{
-		services: rContext.Rio.Rio().V1().Service(),
+		services:    rContext.Rio.Rio().V1().Service(),
+		lock:        lock,
+		autoscalers: autoscalers,
 	}
 }
 
 type Handler struct {
-	services riov1controller.ServiceController
+	services    riov1controller.ServiceController
+	autoscalers map[string]*servicescale.SimpleScale
+	lock        *sync.RWMutex
 }
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	name := r.Header.Get(RioNameHeader)
 	namespace := r.Header.Get(RioNamespaceHeader)
-	port := r.Header.Get(RioPortHeader)
 
-	rioSvc, err := h.services.Get(namespace, name, metav1.GetOptions{})
+	svc, err := h.services.Get(namespace, name, metav1.GetOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	if rioSvc.Status.ObservedScale != nil && *rioSvc.Status.ObservedScale == 0 {
-		rioSvc.Status.ObservedScale = &[]int{1}[0]
-		t := metav1.NewTime(time.Now())
-		rioSvc.Status.ScaleFromZeroTimestamp = &t
-		logrus.Infof("Activating service %s to scale 1", rioSvc.Name)
-		if _, err := h.services.Update(rioSvc); err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
+
+	svc.Status.ComputedReplicas = &[]int{1}[0]
+
+	h.lock.Lock()
+	sc, ok := h.autoscalers[fmt.Sprintf("%s/%s", namespace, name)]
+	if ok {
+		sc.ReportMetric()
+	}
+	h.lock.Unlock()
+
+	logrus.Infof("Activating service %s to scale 1", svc.Name)
+	if _, err := h.services.UpdateStatus(svc); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	checkPort := ""
+	for _, port := range serviceports.ContainerPorts(svc) {
+		if port.IsExposed() && port.IsHTTP() {
+			checkPort = strconv.Itoa(int(port.Port))
+			continue
 		}
 	}
 
-	timer := time.After(time.Minute)
+	app, version := services.AppAndVersion(svc)
+	serveFQDN(name2.SafeConcatName(app, version), namespace, checkPort, w, r)
 
-	endpointCh, endpointNotReady := gateway.EndpointChanMap.Load(fmt.Sprintf("%s.%s", name, namespace))
-	if !endpointNotReady {
-		serveFQDN(name, namespace, port, w, r)
-		return
-	}
-	select {
-	case <-timer:
-		http.Error(w, "timeout waiting for endpoint to be active", http.StatusGatewayTimeout)
-		return
-	case _, ok := <-endpointCh.(chan struct{}):
-		if !ok {
-			serveFQDN(name, namespace, port, w, r)
-			return
-		}
-	}
+	logrus.Infof("activating service %s/%s takes %v seconds", svc.Name, svc.Namespace, time.Now().Sub(start).Seconds())
+	return
 }
 
 func serveFQDN(name, namespace, port string, w http.ResponseWriter, r *http.Request) {
 	targetURL := &url.URL{
 		Scheme: "http",
-		Host:   fmt.Sprintf("%s.%s.svc.cluster.local:%s", name, namespace, port),
+		Host:   fmt.Sprintf("%s.%s.svc:%s", name, namespace, port),
 		Path:   r.URL.Path,
 	}
 	r.URL = targetURL
 	r.URL.Host = targetURL.Host
 	r.Host = targetURL.Host
 
-	// todo: check if 503 is actually coming from application or envoy
-	shouldRetry := activatorutil.RetryStatus(http.StatusServiceUnavailable)
+	shouldRetry := []retryCond{retryStatus(http.StatusServiceUnavailable), retryStatus(http.StatusBadGateway)}
 	backoffSettings := wait.Backoff{
 		Duration: minRetryInterval,
 		Factor:   exponentialBackoffBase,
 		Steps:    maxRetries,
 	}
 
-	rt := activatorutil.NewRetryRoundTripper(activatorutil.AutoTransport, logger.SugaredLogger, backoffSettings, shouldRetry)
+	rt := newRetryRoundTripper(autoTransport, backoffSettings, shouldRetry...)
 	httpProxy := proxy.NewUpgradeAwareHandler(targetURL, rt, true, false, er)
 	httpProxy.ServeHTTP(w, r)
 }

@@ -1,0 +1,10 @@
+services:
+  autoscaler:
+    global_permissions:
+    - '* pods'
+    - '* configmaps'
+    - '* autoscale.rio.cattle.io/servicescalerecommendations'
+    ports:
+    - 80:80
+    args:
+    - --debug

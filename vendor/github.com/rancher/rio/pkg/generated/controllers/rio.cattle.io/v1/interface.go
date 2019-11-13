@@ -26,11 +26,10 @@ import (
 )
 
 type Interface interface {
-	App() AppController
 	ExternalService() ExternalServiceController
-	PublicDomain() PublicDomainController
 	Router() RouterController
 	Service() ServiceController
+	Stack() StackController
 }
 
 func New(controllerManager *generic.ControllerManager, client clientset.RioV1Interface,
@@ -48,18 +47,15 @@ type version struct {
 	client            clientset.RioV1Interface
 }
 
-func (c *version) App() AppController {
-	return NewAppController(v1.SchemeGroupVersion.WithKind("App"), c.controllerManager, c.client, c.informers.Apps())
-}
 func (c *version) ExternalService() ExternalServiceController {
 	return NewExternalServiceController(v1.SchemeGroupVersion.WithKind("ExternalService"), c.controllerManager, c.client, c.informers.ExternalServices())
-}
-func (c *version) PublicDomain() PublicDomainController {
-	return NewPublicDomainController(v1.SchemeGroupVersion.WithKind("PublicDomain"), c.controllerManager, c.client, c.informers.PublicDomains())
 }
 func (c *version) Router() RouterController {
 	return NewRouterController(v1.SchemeGroupVersion.WithKind("Router"), c.controllerManager, c.client, c.informers.Routers())
 }
 func (c *version) Service() ServiceController {
 	return NewServiceController(v1.SchemeGroupVersion.WithKind("Service"), c.controllerManager, c.client, c.informers.Services())
+}
+func (c *version) Stack() StackController {
+	return NewStackController(v1.SchemeGroupVersion.WithKind("Stack"), c.controllerManager, c.client, c.informers.Stacks())
 }

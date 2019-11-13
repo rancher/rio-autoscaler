@@ -7,10 +7,12 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"sync"
+
+	"github.com/rancher/rio-autoscaler/pkg/controllers/servicescale"
 
 	"github.com/rancher/rio-autoscaler/pkg/controllers"
 	"github.com/rancher/rio-autoscaler/pkg/gatewayserver"
-	"github.com/rancher/rio-autoscaler/pkg/logger"
 	"github.com/rancher/rio-autoscaler/types"
 	"github.com/rancher/wrangler/pkg/leader"
 	"github.com/rancher/wrangler/pkg/signals"
@@ -36,37 +38,24 @@ func main() {
 			Name:   "kubeconfig",
 			EnvVar: "KUBECONFIG",
 		},
-		cli.StringFlag{
-			Name:   "debug",
-			EnvVar: "DEBUG",
+		cli.BoolFlag{
+			Name: "debug",
 		},
 	}
-	app.Commands = []cli.Command{
-		{
-			Name:   "gateway",
-			Action: runGateway,
-			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "listen",
-					Value: "8080",
-				},
-			},
-			Usage: "Run autoscaler gateway",
-		},
-	}
+	app.Action = run
 
 	if err := app.Run(os.Args); err != nil {
 		logrus.Fatal(err)
 	}
 }
 
-func runGateway(c *cli.Context) error {
+func run(c *cli.Context) error {
 	logrus.Info("Starting controller")
-	ctx := signals.SetupSignalHandler(context.Background())
-
-	if err := logger.InitLogger(c.GlobalString("debug")); err != nil {
-		return err
+	if c.Bool("debug") {
+		logrus.SetLevel(logrus.DebugLevel)
 	}
+
+	ctx := signals.SetupSignalHandler(context.Background())
 
 	kubeconfig := c.String("kubeconfig")
 	namespace := os.Getenv("NAMESPACE")
@@ -76,18 +65,21 @@ func runGateway(c *cli.Context) error {
 		return err
 	}
 
+	lock := &sync.RWMutex{}
+	autoscalers := map[string]*servicescale.SimpleScale{}
+
 	ctx, rioContext := types.BuildContext(ctx, namespace, restConfig)
 	go func() {
 		leader.RunOrDie(ctx, namespace, "rio-autoscaler", rioContext.K8s, func(ctx context.Context) {
-			runtime.Must(controllers.Register(ctx, rioContext))
+			runtime.Must(controllers.Register(ctx, rioContext, lock, autoscalers))
 			runtime.Must(rioContext.Start(ctx))
 			<-ctx.Done()
 		})
 	}()
 
-	gatewayHandler := gatewayserver.NewHandler(rioContext)
+	gatewayHandler := gatewayserver.NewHandler(rioContext, lock, autoscalers)
 	srv := &http.Server{
-		Addr:    ":" + c.String("listen"),
+		Addr:    ":80",
 		Handler: h2c.NewHandler(gatewayHandler, &http2.Server{}),
 	}
 

@@ -24,16 +24,14 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
-	// Apps returns a AppInformer.
-	Apps() AppInformer
 	// ExternalServices returns a ExternalServiceInformer.
 	ExternalServices() ExternalServiceInformer
-	// PublicDomains returns a PublicDomainInformer.
-	PublicDomains() PublicDomainInformer
 	// Routers returns a RouterInformer.
 	Routers() RouterInformer
 	// Services returns a ServiceInformer.
 	Services() ServiceInformer
+	// Stacks returns a StackInformer.
+	Stacks() StackInformer
 }
 
 type version struct {
@@ -47,19 +45,9 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// Apps returns a AppInformer.
-func (v *version) Apps() AppInformer {
-	return &appInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
 // ExternalServices returns a ExternalServiceInformer.
 func (v *version) ExternalServices() ExternalServiceInformer {
 	return &externalServiceInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
-// PublicDomains returns a PublicDomainInformer.
-func (v *version) PublicDomains() PublicDomainInformer {
-	return &publicDomainInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // Routers returns a RouterInformer.
@@ -70,4 +58,9 @@ func (v *version) Routers() RouterInformer {
 // Services returns a ServiceInformer.
 func (v *version) Services() ServiceInformer {
 	return &serviceInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// Stacks returns a StackInformer.
+func (v *version) Stacks() StackInformer {
+	return &stackInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
