@@ -1,9 +1,5 @@
 package v1
 
-import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
 type ImageBuildSpec struct {
 	// Repository url
 	Repo string `json:"repo,omitempty"`
@@ -30,7 +26,7 @@ type ImageBuildSpec struct {
 	WebhookSecretName string `json:"webhookSecretName,omitempty"`
 
 	// Specify secret name for checking our git resources
-	CloneSecretName string `json:"pullSecretName,omitempty"`
+	CloneSecretName string `json:"cloneSecretName,omitempty"`
 
 	// Specify custom registry to push the image instead of built-in one
 	PushRegistry string `json:"pushRegistry,omitempty"`
@@ -50,9 +46,6 @@ type ImageBuildSpec struct {
 	// Build image with no cache
 	NoCache bool `json:"noCache,omitempty"`
 
-	// Timeout describes how long the build can run
-	Timeout *metav1.Duration `json:"timeout,omitempty" mapper:"duration"`
-
-	// Watch describe if a git watcher should be created to watch git branch changes and apply change
-	Watch bool `json:"watch,omitempty"`
+	// TimeoutSeconds describes how long the build can run
+	TimeoutSeconds *int `json:"timeout,omitempty" mapper:"duration"`
 }

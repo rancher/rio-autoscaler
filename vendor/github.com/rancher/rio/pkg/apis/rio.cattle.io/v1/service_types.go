@@ -4,14 +4,12 @@ import (
 	"github.com/rancher/wrangler/pkg/condition"
 	"github.com/rancher/wrangler/pkg/genericcondition"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 var (
-	ServiceConditionImageReady      = condition.Cond("ImageReady")
-	ServiceConditionServiceDeployed = condition.Cond("ServiceDeployed")
+	ServiceConditionImageReady = condition.Cond("ImageReady")
 )
 
 // +genclient
@@ -40,11 +38,11 @@ type AutoscaleConfig struct {
 
 // RolloutConfig specifies the configuration when promoting a new revision
 type RolloutConfig struct {
-	// Increment Value each Rollout can scale up or down
+	// Increment Value each Rollout can scale up or down, always a positive number
 	Increment int `json:"increment,omitempty"`
 
-	// Interval between each Rollout
-	Interval metav1.Duration `json:"interval,omitempty" mapper:"duration"`
+	// Interval between each Rollout in seconds
+	IntervalSeconds int `json:"intervalSeconds,omitempty" mapper:"duration,alias=interval"`
 
 	// Pause if true the rollout will stop in place until set to false.
 	Pause bool `json:"pause,omitempty"`
@@ -71,7 +69,7 @@ type ServiceSpec struct {
 	// to this service.  If rollout is set, the weight become the target weight of the rollout.
 	Weight *int `json:"weight,omitempty"`
 
-	// Number of desired pods. This is a pointer to distinguish between explicit zero and not specified. Defaults to 1.
+	// Number of desired pods. This is a pointer to distinguish between explicit zero and not specified. Defaults to 1 in deployment.
 	Replicas *int `json:"replicas,omitempty" mapper:"alias=scale"`
 
 	// The maximum number of pods that can be unavailable during the update.
@@ -112,6 +110,9 @@ type ServiceSpec struct {
 
 	// Whether to disable Service mesh for Service. If true, no mesh sidecar will be deployed along with the Service
 	ServiceMesh *bool `json:"serviceMesh,omitempty"`
+
+	// RequestTimeoutSeconds specify the timeout set on api gateway for each individual service
+	RequestTimeoutSeconds *int `json:"requestTimeoutSeconds,omitempty"`
 
 	// Permissions to the Services. It will create corresponding ServiceAccounts, Roles and RoleBinding.
 	Permissions []Permission `json:"permissions,omitempty" mapper:"permissions,alias=permission"`
@@ -191,11 +192,11 @@ type Container struct {
 	// List of environment variables to set in the container. Cannot be updated.
 	Env []EnvVar `json:"env,omitempty" mapper:"env,envmap=sep==,alias=environment"`
 
-	// CPU, in cores. (500m = .5 cores)
-	CPUs *resource.Quantity `json:"cpus,omitempty" mapper:"quantity,alias=cpu"`
+	// CPU, in cores
+	CPUMillis *int64 `json:"cpuMillis,omitempty" mapper:"quantity,alias=cpu|cpus"`
 
-	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
-	Memory *resource.Quantity `json:"memory,omitempty" mapper:"quantity,alias=mem"`
+	// Memory, in bytes
+	MemoryBytes *int64 `json:"memoryBytes,omitempty" mapper:"quantity,alias=mem|memory"`
 
 	// Secrets Mounts
 	Secrets []DataMount `json:"secrets,omitempty" mapper:"secrets,envmap=sep=:,alias=secret"`
@@ -209,7 +210,7 @@ type Container struct {
 	// Periodic probe of container service readiness. Container will be removed from service endpoints if the probe fails. Cannot be updated. More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
 	ReadinessProbe *v1.Probe `json:"readinessProbe,omitempty" mapper:"alias=readiness"`
 
-	// Image pull policy. One of Always, Never, IfNotPresent. Defaults to Always if :latest tag is specified, or IfNotPresent otherwise. Cannot be updated. More info: https://kubernetes.io/docs/concepts/containers/images#updating-images
+	// Image pull policy. One of Always, Never, IfNotPresent. Defaults to Always if tag is does not start with v[0-9] or [0-9], or IfNotPresent otherwise. Cannot be updated. More info: https://kubernetes.io/docs/concepts/containers/images#updating-images
 	ImagePullPolicy v1.PullPolicy `json:"imagePullPolicy,omitempty" mapper:"enum=Always|IfNotPresent|Never,alias=pullPolicy"`
 
 	// Whether this container should allocate a buffer for stdin in the container runtime. If this is not set, reads from stdin in the container will always result in EOF. Default is false.
@@ -255,7 +256,7 @@ type VolumeTemplate struct {
 	// Resources represents the minimum resources the volume should have.
 	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
 	// +optional
-	StorageRequest resource.Quantity `json:"storage,omitempty" mapper:"quantity"`
+	StorageRequest int64 `json:"storage,omitempty" mapper:"quantity"`
 	// Name of the StorageClass required by the claim.
 	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1
 	StorageClassName string `json:"storageClassName,omitempty"`
@@ -281,7 +282,7 @@ type Volume struct {
 	// That path on the host to mount into this container
 	HostPath string `json:"hostpath,omitempty"`
 
-	// The
+	// HostPathType specify HostPath type
 	HostPathType *v1.HostPathType `json:"hostPathType,omitempty" protobuf:"bytes,2,opt,name=type"`
 
 	// If Persistent is true then this volume refers to a PersistentVolumeClaim in this namespace. The
@@ -382,14 +383,32 @@ type ServiceStatus struct {
 	// ScaleStatus for the Service
 	ScaleStatus *ScaleStatus `json:"scaleStatus,omitempty"`
 
+	// ComputedApp is the calculated value of Spec.App if not set
+	ComputedApp string `json:"computedApp,omitempty"`
+
+	// ComputedVersion is the calculated value of Spec.Version if not set
+	ComputedVersion string `json:"computedVersion,omitempty"`
+
 	// ComputedReplicas is calculated from autoscaling component to make sure pod has the desired load
 	ComputedReplicas *int `json:"computedReplicas,omitempty"`
 
 	// ComputedWeight is the weight calculated from the rollout revision
 	ComputedWeight *int `json:"computedWeight,omitempty"`
 
-	// ContainerImages are populated from builds to override the images of this service
-	ContainerImages map[string]BuiltImage `json:"containerImages,omitempty"`
+	// ContainerRevision are populated from builds to store commits for each repo
+	ContainerRevision map[string]BuildRevision `json:"containerRevision,omitempty"`
+
+	// GeneratedServices contains all the service names are generated from build template
+	GeneratedServices map[string]bool `json:"generatedServices,omitempty"`
+
+	// GitCommits contains all git commits that triggers template update
+	GitCommits []string `json:"gitCommits,omitempty"`
+
+	// ShouldGenerate contains the serviceName that should be generated on the next controller run
+	ShouldGenerate string `json:"shouldGenerate,omitempty"`
+
+	// ShouldClean contains all the services that are generated from template but should be cleaned up.
+	ShouldClean map[string]bool `json:"shouldClean,omitempty"`
 
 	// Represents the latest available observations of a deployment's current state.
 	Conditions []genericcondition.GenericCondition `json:"conditions,omitempty"`
@@ -403,13 +422,8 @@ type ServiceStatus struct {
 	// log token to access build log
 	BuildLogToken string `json:"buildLogToken,omitempty"`
 
-	// Associated git commit name
-	GitCommitName string `json:"gitCommitName,omitempty"`
-}
-
-type BuiltImage struct {
-	ImageName  string `json:"imageName,omitempty"`
-	PullSecret string `json:"pullSecret,omitempty"`
+	// Watch represents if a service should creates git watcher to watch git changes
+	Watch bool `json:"watch,omitempty"`
 }
 
 type ScaleStatus struct {
@@ -419,4 +433,8 @@ type ScaleStatus struct {
 
 	// Total number of available pods (ready for at least minReadySeconds) targeted by this deployment.
 	Available int `json:"available,omitempty"`
+}
+
+type BuildRevision struct {
+	Commits []string `json:"commits,omitempty"`
 }

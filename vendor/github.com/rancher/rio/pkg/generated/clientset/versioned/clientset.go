@@ -19,7 +19,10 @@ limitations under the License.
 package versioned
 
 import (
+	"fmt"
+
 	adminv1 "github.com/rancher/rio/pkg/generated/clientset/versioned/typed/admin.rio.cattle.io/v1"
+	managementv3 "github.com/rancher/rio/pkg/generated/clientset/versioned/typed/management.cattle.io/v3"
 	riov1 "github.com/rancher/rio/pkg/generated/clientset/versioned/typed/rio.cattle.io/v1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
@@ -29,6 +32,7 @@ import (
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	AdminV1() adminv1.AdminV1Interface
+	ManagementV3() managementv3.ManagementV3Interface
 	RioV1() riov1.RioV1Interface
 }
 
@@ -36,13 +40,19 @@ type Interface interface {
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	adminV1 *adminv1.AdminV1Client
-	rioV1   *riov1.RioV1Client
+	adminV1      *adminv1.AdminV1Client
+	managementV3 *managementv3.ManagementV3Client
+	rioV1        *riov1.RioV1Client
 }
 
 // AdminV1 retrieves the AdminV1Client
 func (c *Clientset) AdminV1() adminv1.AdminV1Interface {
 	return c.adminV1
+}
+
+// ManagementV3 retrieves the ManagementV3Client
+func (c *Clientset) ManagementV3() managementv3.ManagementV3Interface {
+	return c.managementV3
 }
 
 // RioV1 retrieves the RioV1Client
@@ -59,14 +69,23 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 }
 
 // NewForConfig creates a new Clientset for the given config.
+// If config's RateLimiter is not set and QPS and Burst are acceptable,
+// NewForConfig will generate a rate-limiter in configShallowCopy.
 func NewForConfig(c *rest.Config) (*Clientset, error) {
 	configShallowCopy := *c
 	if configShallowCopy.RateLimiter == nil && configShallowCopy.QPS > 0 {
+		if configShallowCopy.Burst <= 0 {
+			return nil, fmt.Errorf("Burst is required to be greater than 0 when RateLimiter is not set and QPS is set to greater than 0")
+		}
 		configShallowCopy.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(configShallowCopy.QPS, configShallowCopy.Burst)
 	}
 	var cs Clientset
 	var err error
 	cs.adminV1, err = adminv1.NewForConfig(&configShallowCopy)
+	if err != nil {
+		return nil, err
+	}
+	cs.managementV3, err = managementv3.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +106,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
 	cs.adminV1 = adminv1.NewForConfigOrDie(c)
+	cs.managementV3 = managementv3.NewForConfigOrDie(c)
 	cs.rioV1 = riov1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
@@ -97,6 +117,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.adminV1 = adminv1.New(c)
+	cs.managementV3 = managementv3.New(c)
 	cs.rioV1 = riov1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
