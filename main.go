@@ -9,9 +9,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/rancher/rio-autoscaler/pkg/controllers/servicescale"
-
 	"github.com/rancher/rio-autoscaler/pkg/controllers"
+	"github.com/rancher/rio-autoscaler/pkg/controllers/servicescale"
 	"github.com/rancher/rio-autoscaler/pkg/gatewayserver"
 	"github.com/rancher/rio-autoscaler/types"
 	"github.com/rancher/wrangler/pkg/leader"
