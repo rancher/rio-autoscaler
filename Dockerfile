@@ -7,4 +7,4 @@ ENTRYPOINT ["./rio-autoscaler"]
 
 FROM alpine:3.9 as production
 COPY --from=builder /rio-autoscaler/rio-autoscaler /usr/bin/
-ENTRYPOINT ["rio-autoscaler"]
+CMD ["rio-autoscaler"]

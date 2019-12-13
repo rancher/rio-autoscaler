@@ -250,7 +250,7 @@ func (s *SimpleScale) scrape() error {
 		return err
 	}
 
-	var totalActiveRequest, readyPods int
+	var totalActiveRequest, inboundActiveRequests, outbountActiveRequests, readyPods int
 	stat := metric{
 		time: time.Now(),
 	}
@@ -277,24 +277,9 @@ func (s *SimpleScale) scrape() error {
 		defer resp.Body.Close()
 		scannner := bufio.NewScanner(resp.Body)
 
-		var request, response int
-		for scannner.Scan() {
-			if strings.Contains(scannner.Text(), responseTotalMatchCriteria) {
-				parts := strings.Split(scannner.Text(), " ")
-				if len(parts) == 2 {
-					rqs, _ := strconv.Atoi(parts[1])
-					response = rqs
-				}
-			}
-			if strings.Contains(scannner.Text(), requestTotalMatchCriteria) {
-				parts := strings.Split(scannner.Text(), " ")
-				if len(parts) == 2 {
-					rqs, _ := strconv.Atoi(parts[1])
-					request = rqs
-				}
-			}
-		}
-		totalActiveRequest += request - response
+		inboundActiveRequests = calculateActiveRequests(scannner, requestTotalMatchCriteria, responseTotalMatchCriteria, true)
+		outbountActiveRequests = calculateActiveRequests(scannner, requestTotalMatchCriteria, responseTotalMatchCriteria, false)
+		totalActiveRequest = inboundActiveRequests + outbountActiveRequests
 		readyPods++
 	}
 
@@ -305,9 +290,34 @@ func (s *SimpleScale) scrape() error {
 	}
 	stat.readyPods = readyPods
 
-	logrus.Debugf("collect metric for %s/%s, total request: %v, average in-flight request per pod: %v, ready pod: %v", s.namespace, s.serviceName, totalActiveRequest, stat.activeRequest, readyPods)
+	logrus.Debugf("collect metric for %s/%s, total request: %v(inbound %v, outbound %v), average in-flight request per pod: %v, ready pod: %v", s.namespace, s.serviceName, totalActiveRequest, inboundActiveRequests, outbountActiveRequests, stat.activeRequest, readyPods)
 	s.metrics.stats = append(s.metrics.stats, stat)
 	return nil
+}
+
+func calculateActiveRequests(scanner *bufio.Scanner, requestMatch, responseMatch string, inbound bool) int {
+	direction := "direction=\"inbound\""
+	if !inbound {
+		direction = "direction=\"outbound\""
+	}
+	var request, response int
+	for scanner.Scan() {
+		response = match(scanner, responseMatch, direction)
+		request = match(scanner, requestMatch, direction)
+	}
+	return request - response
+}
+
+func match(scanner *bufio.Scanner, m, direction string) int {
+	var result int
+	if strings.Contains(scanner.Text(), m) && strings.Contains(scanner.Text(), direction) {
+		parts := strings.Split(scanner.Text(), " ")
+		if len(parts) == 2 {
+			rqs, _ := strconv.Atoi(parts[1])
+			result = rqs
+		}
+	}
+	return result
 }
 
 func bounded(value, lower, upper int32) int32 {
