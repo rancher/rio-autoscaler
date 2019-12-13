@@ -277,11 +277,11 @@ func (s *SimpleScale) scrape() error {
 		defer resp.Body.Close()
 		scannner := bufio.NewScanner(resp.Body)
 
-		inboundActiveRequests = calculateActiveRequests(scannner, requestTotalMatchCriteria, responseTotalMatchCriteria, true)
-		outbountActiveRequests = calculateActiveRequests(scannner, requestTotalMatchCriteria, responseTotalMatchCriteria, false)
-		totalActiveRequest = inboundActiveRequests + outbountActiveRequests
+		inboundActiveRequests += calculateActiveRequests(scannner, requestTotalMatchCriteria, responseTotalMatchCriteria, true)
+		outbountActiveRequests += calculateActiveRequests(scannner, requestTotalMatchCriteria, responseTotalMatchCriteria, false)
 		readyPods++
 	}
+	totalActiveRequest = inboundActiveRequests + outbountActiveRequests
 
 	if readyPods == 0 {
 		stat.activeRequest = 0
@@ -302,22 +302,30 @@ func calculateActiveRequests(scanner *bufio.Scanner, requestMatch, responseMatch
 	}
 	var request, response int
 	for scanner.Scan() {
-		response = match(scanner, responseMatch, direction)
-		request = match(scanner, requestMatch, direction)
+		if v, ok := match(scanner.Text(), responseMatch, direction); ok {
+			response = v
+		}
+		if v, ok := match(scanner.Text(), requestMatch, direction); ok {
+			request = v
+		}
+	}
+	if request-response < 0 {
+		return 0
 	}
 	return request - response
 }
 
-func match(scanner *bufio.Scanner, m, direction string) int {
+func match(text, m, direction string) (int, bool) {
 	var result int
-	if strings.Contains(scanner.Text(), m) && strings.Contains(scanner.Text(), direction) {
-		parts := strings.Split(scanner.Text(), " ")
+	if strings.Contains(text, m) && strings.Contains(text, direction) {
+		parts := strings.Split(text, " ")
 		if len(parts) == 2 {
 			rqs, _ := strconv.Atoi(parts[1])
 			result = rqs
+			return result, true
 		}
 	}
-	return result
+	return result, false
 }
 
 func bounded(value, lower, upper int32) int32 {
