@@ -37,6 +37,11 @@ func main() {
 			Name:   "kubeconfig",
 			EnvVar: "KUBECONFIG",
 		},
+		cli.StringFlag{
+			Name:  "srv-addr",
+			Usage: "Address to server on",
+			Value: ":80",
+		},
 		cli.BoolFlag{
 			Name: "debug",
 		},
@@ -78,7 +83,7 @@ func run(c *cli.Context) error {
 
 	gatewayHandler := gatewayserver.NewHandler(rioContext, lock, autoscalers)
 	srv := &http.Server{
-		Addr:    ":80",
+		Addr:    c.String("srv-addr"),
 		Handler: h2c.NewHandler(gatewayHandler, &http2.Server{}),
 	}
 
