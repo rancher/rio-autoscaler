@@ -18,15 +18,11 @@ import (
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/proxy"
-	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
-	maxRetries             = 18 // the sum of all retries would add up to 1 minute
-	minRetryInterval       = 100 * time.Millisecond
-	exponentialBackoffBase = 1.3
-	RioNameHeader          = "X-Rio-ServiceName"
-	RioNamespaceHeader     = "X-Rio-Namespace"
+	RioNameHeader      = "X-Rio-ServiceName"
+	RioNamespaceHeader = "X-Rio-Namespace"
 )
 
 func NewHandler(rContext *types.Context, lock *sync.RWMutex, autoscalers map[string]*servicescale.SimpleScale) Handler {
@@ -81,8 +77,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	app, version := services.AppAndVersion(svc)
 	serveFQDN(name2.SafeConcatName(app, version), namespace, checkPort, w, r)
 
-	logrus.Infof("activating service %s/%s takes %v seconds", svc.Name, svc.Namespace, time.Now().Sub(start).Seconds())
-	return
+	logrus.Infof("activating service %s/%s takes %v seconds", svc.Name, svc.Namespace, time.Since(start).Seconds())
 }
 
 func serveFQDN(name, namespace, port string, w http.ResponseWriter, r *http.Request) {
@@ -95,15 +90,7 @@ func serveFQDN(name, namespace, port string, w http.ResponseWriter, r *http.Requ
 	r.URL.Host = targetURL.Host
 	r.Host = targetURL.Host
 
-	shouldRetry := []retryCond{retryStatus(http.StatusServiceUnavailable), retryStatus(http.StatusBadGateway)}
-	backoffSettings := wait.Backoff{
-		Duration: minRetryInterval,
-		Factor:   exponentialBackoffBase,
-		Steps:    maxRetries,
-	}
-
-	rt := newRetryRoundTripper(autoTransport, backoffSettings, shouldRetry...)
-	httpProxy := proxy.NewUpgradeAwareHandler(targetURL, rt, true, false, er)
+	httpProxy := proxy.NewUpgradeAwareHandler(targetURL, autoTransport, true, false, er)
 	httpProxy.ServeHTTP(w, r)
 }
 
