@@ -17,15 +17,8 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
-	"strconv"
 
-	"github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
-	"k8s.io/apimachinery/pkg/util/wait"
-)
-
-const (
-	requestCountHTTPHeader = "Request-Retry-Count"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -55,71 +48,3 @@ var http2Transport http.RoundTripper = &http2.Transport{
 
 // AutoTransport uses h2c for HTTP2 requests and falls back to `http.DefaultTransport` for all others
 var autoTransport = newHTTPTransport(http.DefaultTransport, http2Transport)
-
-type retryCond func(*http.Response) bool
-
-// RetryStatus will filter responses matching `status`
-func retryStatus(status int) retryCond {
-	return func(resp *http.Response) bool {
-		return resp.StatusCode == status
-	}
-}
-
-type retryRoundTripper struct {
-	transport       http.RoundTripper
-	backoffSettings wait.Backoff
-	retryConditions []retryCond
-}
-
-// RetryRoundTripper retries a request on error or retry condition, using the given `retry` strategy
-func newRetryRoundTripper(rt http.RoundTripper, b wait.Backoff, conditions ...retryCond) http.RoundTripper {
-	return &retryRoundTripper{
-		transport:       rt,
-		backoffSettings: b,
-		retryConditions: conditions,
-	}
-}
-
-func (rrt *retryRoundTripper) RoundTrip(r *http.Request) (resp *http.Response, err error) {
-	// The request body cannot be read multiple times for retries.
-	// The workaround is to clone the request body into a byte reader
-	// so the body can be read multiple times.
-	if r.Body != nil {
-		logrus.Debugf("Wrapping body in a rewinder.")
-		r.Body = newRewinder(r.Body)
-	}
-
-	attempts := 0
-	wait.ExponentialBackoff(rrt.backoffSettings, func() (bool, error) {
-		attempts++
-		r.Header.Add(requestCountHTTPHeader, strconv.Itoa(attempts))
-		resp, err = rrt.transport.RoundTrip(r)
-
-		if err != nil {
-			logrus.Errorf("Error making a request: %s", err)
-			return false, nil
-		}
-
-		for _, retryCond := range rrt.retryConditions {
-			if retryCond(resp) {
-				resp.Body.Close()
-				return false, nil
-			}
-		}
-		return true, nil
-	})
-
-	if err == nil {
-		logrus.Infof("Finished after %d attempt(s). Response code: %d", attempts, resp.StatusCode)
-
-		if resp.Header == nil {
-			resp.Header = make(http.Header)
-		}
-
-		resp.Header.Add(requestCountHTTPHeader, strconv.Itoa(attempts))
-	} else {
-		logrus.Errorf("Failed after %d attempts. Last error: %v", attempts, err)
-	}
-
-	return
-}
